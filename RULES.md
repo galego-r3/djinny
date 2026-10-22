@@ -8,6 +8,8 @@ installed for (here: the parent of this file's folder).
   only group projects: they hold no files and no `CLAUDE.md`. Work happens inside the project folder; read
   its `CLAUDE.md` first. Every project `CLAUDE.md` starts with a **`Status:` line** right under its title:
   one short line on where the project stands now. Update it whenever that changes; the dashboard shows it.
+  **Archiving**: a finished project gets `Status: archived YYYY-MM-DD — <one line on the outcome>`. It stays
+  where it is, but the dashboard no longer lists it and its jobs stop. Remove the word to bring it back.
 - **C2. Session names and tab colours.** Session name = folder path relative to the workspace (e.g.
   `family/schule`); the root's name is the workspace folder's name. The SessionStart hook sets it, along with
   the Konsole tab title, tab colour and the status-line logo, and re-sorts the tabs. Don't rename sessions.

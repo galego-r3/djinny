@@ -11,6 +11,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 - **Status line**: model, context use, rate limits, estimated cost, plus a big two-line logo of the
   project name in its tab colour.
 - **Jobs** (`claude-jobs`): runs `<project>/jobs/<name>` scripts on their interval (systemd user timer).
+- **Archive**: a project whose `Status:` line starts with `archived` is hidden from the dashboard and its
+  jobs stop (`RULES.md` C1).
 - **Rules** (`RULES.md`): the conventions the sessions follow. The workspace's `CLAUDE.md` loads them.
 
 ## Layout

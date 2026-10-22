@@ -2,10 +2,12 @@
 """Workspace dashboard, runs full-screen until you quit (q or Ctrl+C). Start it with `dashboard`
 (symlinked into ~/.local/bin by install.sh).
 
+Two tabs (Tab key or click): Active and Archive (projects whose Status: line starts with "archived").
 One row per project: colour, live state, status line, tokens used in the current 5h window, the current
 7d window and all time.
 - Project = folder with a CLAUDE.md and no project below it (parent folders don't count); the root's row
-  has the workspace's name. Folders in cockpit.json "hidden" are skipped.
+  has the workspace's name. Folders in cockpit.json "hidden" and archived projects (Status: archived …)
+  are skipped.
 - Live state = busy / question / monitoring, written by hooks/session-state.sh.
 - Status = the "Status:" line under the title of the project's CLAUDE.md.
 - Colours = "colors" in the workspace's cockpit.json.
@@ -70,6 +72,12 @@ def load_rows():
             found.append(str(Path(dirpath).relative_to(ROOT)))
     projects = [p for p in found if not any(q.startswith(p + "/") for q in found)]   # leaves only
     return [(NAME, status_of(ROOT))] + [(p, status_of(ROOT / p)) for p in sorted(projects)]
+
+def is_archived(status): return status.lower().startswith("archived")
+
+VIEWS = ["Active", "Archive"]   # dashboard tabs: projects in work / archived projects (RULES.md C1)
+VIEW = [0]                      # index of the current tab
+TABS = []                       # (start column, end column, view index) of each tab label, for clicks
 
 def load_colors():
     return load_conf().get("colors", {})              # re-read every frame: edits show up live
@@ -193,8 +201,10 @@ def fmt_reset(ts):
 
 def frame():
     now = time.time()
-    rows, colors = load_rows(), load_colors()
-    row_paths = sorted((r for r, _ in rows if r != NAME), key=len, reverse=True)
+    all_rows, colors = load_rows(), load_colors()
+    row_paths = sorted((r for r, _ in all_rows if r != NAME), key=len, reverse=True)   # usage counts for all
+    n_arch = sum(is_archived(st) for _, st in all_rows)
+    rows = [(r, st) for r, st in all_rows if is_archived(st) == (VIEW[0] == 1)]
     windows, limits = rate_windows(now)
     usage = {}
     for cwd, ts, n in transcript_entries():
@@ -208,7 +218,7 @@ def frame():
     DISMISS.clear(); CLICK.clear()
 
     W, H = shutil.get_terminal_size((120, 40))
-    NUMW, STATEW = 6, 10
+    NUMW, STATEW = 6, 12                 # state column fits "monitoring" plus a gap
     namew = min(28, max(len(r) for r, _ in rows))
     fixed = 3 + namew + 2 + STATEW + 2 + 3 * NUMW + 2
     statw = max(12, min(max(len(s) for _, s in rows), W - fixed - 1))
@@ -220,7 +230,16 @@ def frame():
             head += f"  {label} {pct:.0f}% ↻ {fmt_reset(reset)}" if pct is not None else f"  {label} ↻ {fmt_reset(reset)}"
         else:
             head += f"  {label} rolling"
-    out = [head + RST, ""]
+    out = [head + RST]
+    # Tab bar: the current tab bold and underlined in the header colour
+    bar, col_ = " ", 2
+    TABS.clear()
+    for i, name in enumerate(VIEWS):
+        label = f" {name} ({n_arch}) " if i == 1 else f" {name} "
+        TABS.append((col_, col_ + len(label) - 1, i))
+        bar += (f"{BOLD}\x1b[4m{esc('#7EC8F7')}{label}{RST}" if i == VIEW[0] else f"{DIM}{label}{RST}") + " "
+        col_ += len(label) + 1
+    out.append(bar)
     pad = " " * (3 + namew + 2 + STATEW + statw + 2)
     out.append(pad + " ".join(f"{BOLD}{esc(c)}{t:>{NUMW}}{RST}" for t, c in zip(("5h", "7d", "all"), HCOL)))
 
@@ -233,22 +252,24 @@ def frame():
         col = color_of(rel, colors)
         sw = f"{esc(col, bg=True)}  {RST}" if col else f"{DIM}░░{RST}"
         state = next((s for s in STATES if s in live.get(rel, ())), "")
-        label = state
-        if state == "question" and len(DISMISS) < 9:
-            key = str(len(DISMISS) + 1)
-            DISMISS[key] = qfiles.get(rel, [])
-            label = f"{key} {state}"
+        label, width = state, len(state)
+        if state == "question":                      # shown as "❓" (2 columns wide), with its dismiss key
+            label, width = "❓", 2
+            if len(DISMISS) < 9:
+                key = str(len(DISMISS) + 1)
+                DISMISS[key] = qfiles.get(rel, [])
+                label, width = f"{key} ❓", 4
         u = usage.get(rel, [0, 0, 0])
         tot = [a + b for a, b in zip(tot, u)]
         nums = " ".join(f"{heat(n, i)}{human(n):>{NUMW}}{RST}" for i, n in enumerate(u))
         out.append(f"{sw} {cut(rel, namew):<{namew}}  "
-                   f"{BOLD}{esc(STATES[state]) if state else ''}{label:<{STATEW}}{RST}"
+                   f"{BOLD}{esc(STATES[state]) if state else ''}{label}{' ' * (STATEW - width)}{RST}"
                    f"{cut(st, statw):<{statw}}  {nums}")
         out.append((esc(col) if col else DIM) + "▔" * rule_w + RST)
     nums = " ".join(f"{human(n):>{NUMW}}" for n in tot)
     out.append(f"   {BOLD}{'total':<{namew}}{RST}  {'':<{STATEW}}"
                f"{DIM}{cut('tokens = input + cache writes + output', statw):<{statw}}{RST}  {BOLD}{nums}{RST}")
-    out.append(f"{DIM}q to quit · click a name to go to its tab · 1-9 dismisses that question · refreshes every {REFRESH}s{RST}")
+    out.append(f"{DIM}q to quit · Tab switches Active/Archive · click a name to go to its tab · 1-9 dismisses that ❓ · refreshes every {REFRESH}s{RST}")
     return out
 
 # --- main loop ---------------------------------------------------------------------------------
@@ -285,12 +306,17 @@ def handle_input(data):
     if data in ("q", "Q", "\x1b"):
         return True
     redraw = None
-    for b, _x, y, kind in MOUSE.findall(data):
-        if b == "0" and kind == "M" and int(y) - 1 in CLICK:     # left button press
+    for b, x, y, kind in MOUSE.findall(data):
+        if b != "0" or kind != "M": continue                      # left button press only
+        if int(y) == 2:                                           # tab bar (second line)
+            for start, end, i in TABS:
+                if start <= int(x) <= end: VIEW[0] = i; redraw = False
+        elif int(y) - 1 in CLICK:
             goto_project(CLICK[int(y) - 1]); redraw = False
     rest = MOUSE.sub("", data)
     for ch in rest:
         if ch in ("q", "Q"): return True
+        if ch == "\t": VIEW[0] = 1 - VIEW[0]; redraw = False
         if ch in DISMISS: dismiss(ch); redraw = False
     return redraw
 

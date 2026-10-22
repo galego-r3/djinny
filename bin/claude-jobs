@@ -48,7 +48,7 @@ def find_jobs():
                 continue
             m = next((re.search(r"#\s*every:\s*(\d+)\s*([mhd])\b", l) for l in head
                       if re.search(r"#\s*every:", l)), None)
-            if m:
+            if m and not archived(f.parent.parent):
                 project = str(f.parent.parent.relative_to(ROOT)) if f.parent.parent != ROOT else ROOT.name
                 yield f"{project}/{f.name}", f, int(m.group(1)) * UNITS[m.group(2)]
 
@@ -56,6 +56,14 @@ try:
     HIDDEN = set(json.loads((ROOT / "cockpit.json").read_text()).get("hidden", []))   # skipped folders
 except (OSError, ValueError):
     HIDDEN = set()
+
+def archived(project_dir):
+    """True if the project's CLAUDE.md has a "Status: archived …" line (RULES.md C1): its jobs don't run."""
+    try:
+        return any(l.lower().startswith("status: archived")
+                   for l in (project_dir / "CLAUDE.md").read_text(errors="replace").splitlines()[:8])
+    except OSError:
+        return False
 
 def load_state():
     try:
