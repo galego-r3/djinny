@@ -1,0 +1,6 @@
+[Unit]
+Description=Run due workspace jobs (<project>/jobs/, see claude-jobs)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/claude-jobs

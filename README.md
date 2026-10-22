@@ -1,0 +1,80 @@
+# Claude cockpit
+
+A terminal cockpit for running many Claude Code sessions side by side, one per project, in KDE Konsole tabs.
+
+- **Dashboard** (`dashboard`): a full-screen TUI with one row per project. Each row shows the tab colour,
+  the live state (busy / question / monitoring), the project's `Status:` line and tokens used (5h / 7d /
+  all time). Click a project to switch to its tab, or to open a new tab that starts `claude`. Press 1–9 to
+  dismiss a question row (marks it idle, no tokens used). `q` quits.
+- **Tabs**: each session is named after its folder and gets its tab title and colour automatically. Tabs
+  are kept sorted: DASH, the root, projects A–Z, unnamed tabs last. Leaving `claude` closes its tab.
+- **Status line**: model, context use, rate limits, estimated cost, plus a big two-line logo of the
+  project name in its tab colour.
+- **Jobs** (`claude-jobs`): runs `<project>/jobs/<name>` scripts on their interval (systemd user timer).
+- **Rules** (`RULES.md`): the conventions the sessions follow. The workspace's `CLAUDE.md` loads them.
+
+## Layout
+
+| Path | What |
+| --- | --- |
+| `bin/dashboard` | the TUI (Python 3, no dependencies) |
+| `bin/claude-jobs` | job runner |
+| `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting |
+| `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) |
+| `hooks/sort-tabs.sh` | sorts the Konsole tabs of the current window |
+| `hooks/statusline.sh` | Claude Code status line |
+| `shell/bashrc.sh` | sourced from `~/.bashrc`: dashboard-opened tabs start `claude`; `/exit` closes the tab |
+| `lib/env.sh` | shared shell helpers: workspace location, session names, colours |
+| `systemd/` | `claude-jobs.service` / `.timer` |
+| `RULES.md` | rules for the sessions, loaded by the workspace's `CLAUDE.md` |
+| `cockpit.example.json` | template for the workspace's `cockpit.json` |
+
+## Install
+
+Needs Linux, KDE Konsole (D-Bus via `qdbus6`), Claude Code, `jq`, Python 3 and systemd (user units).
+
+1. Clone this repo into your workspace as `cockpit/`, e.g. `git clone … ~/claude/cockpit`.
+2. Run `cockpit/install.sh`. It takes the parent folder as the workspace, or pass a path as the first
+   argument. You can re-run it at any time. It:
+   - links `bin/*` into `~/.local/bin`, the hooks into `~/.claude/hooks` and the status line to
+     `~/.claude/statusline.sh`
+   - adds whatever is missing to `~/.claude/settings.json` (backup in `settings.json.bak`)
+   - installs and starts `claude-jobs.timer`
+   - adds a line to `~/.bashrc` that loads `shell/bashrc.sh`
+   - writes `<workspace>/cockpit.json` from the example if it doesn't exist
+3. Add `@cockpit/RULES.md` to the workspace's root `CLAUDE.md`, plus your own rules.
+4. Optional: in `cockpit.json`, set tab colours (`colors`) and folders to skip (`hidden`).
+5. Start `dashboard` in a Konsole tab and open projects by clicking them.
+
+## Workspace config: `<workspace>/cockpit.json`
+
+```json
+{
+  "colors":    { "claude": "#7EC8F7", "work/reports": "#FFD600" },
+  "hidden":    ["cockpit", "tmp"],
+  "aliases":   { "old-name": "new-name" },
+  "old_roots": ["~/old/workspace/location"]
+}
+```
+
+- `colors`: Konsole tab colour per folder path, relative to the workspace. The longest match wins, so a
+  colour on a parent folder covers all its projects. The root is listed under the workspace folder's name.
+- `hidden`: folders that the dashboard and the job runner skip.
+- `aliases` / `old_roots`: renamed folders and earlier workspace locations, so that older transcripts
+  still count toward the right project's token use.
+
+The workspace location comes from `$CLAUDE_WORKSPACE`, or else from `~/.config/claude-cockpit/workspace`
+(written by `install.sh`), or else defaults to `~/claude`.
+
+## How it fits together
+
+- **Live state**: the hooks `UserPromptSubmit`, `PostToolUse`, `Notification`, `Stop` and `SessionEnd`
+  write `~/.cache/claude/sessions/<session id>.json`. A session counts as **question** when its last reply
+  contains a `?` or `Your turn:` in its last 300 characters, or a permission dialog is open. It counts as
+  **monitoring** when a wakeup, monitor or background task is pending.
+- **Token use**: comes from the transcripts in `~/.claude/projects`, counting input + cache writes +
+  output (cache reads are left out). The 5h / 7d windows line up with the subscription limits that the
+  status line caches.
+- **Konsole**: the cockpit only uses D-Bus calls that work while Konsole's "security sensitive D-Bus API" is
+  off. That setting blocks sending commands into a tab, so a dashboard-opened tab starts `claude` through a
+  marker file (`~/.cache/claude/autostart`) that `shell/bashrc.sh` reads.

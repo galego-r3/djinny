@@ -1,0 +1,128 @@
+#!/usr/bin/env -S python3 -I
+"""Runs the regular jobs of all workspace projects (RULES.md). Started every 5 min by the systemd user
+timer claude-jobs.timer; symlinked to ~/.local/bin/claude-jobs by install.sh.
+
+A job is any executable file `<workspace>/<project>/jobs/<name>` with a line `# every: <n>m|h|d` in its
+first 20 lines (e.g. `# every: 5h`). It runs with the project folder as working directory and a
+30 min timeout. A job is due `every` after its last successful run; after a failure it is retried
+after 15 min. Output goes to ~/.local/state/claude-jobs/logs/<project>__<name>.log.
+
+  claude-jobs                 run all due jobs (what the timer does)
+  claude-jobs list            show every job with interval, last run, result and next due time
+  claude-jobs run <project>/<name>   run one job now
+"""
+import fcntl, json, os, re, subprocess, sys, time
+from pathlib import Path
+
+def workspace():
+    """Workspace root: $CLAUDE_WORKSPACE, else ~/.config/claude-cockpit/workspace (written by install.sh), else ~/claude."""
+    p = os.environ.get("CLAUDE_WORKSPACE", "")
+    if not p:
+        try: p = (Path.home() / ".config/claude-cockpit/workspace").read_text().strip()
+        except OSError: pass
+    return Path(p or "~/claude").expanduser()
+
+ROOT = workspace()
+STATE = Path.home() / ".local/state/claude-jobs"
+LOGS = STATE / "logs"
+TIMEOUT = 30 * 60
+RETRY = 15 * 60
+MAX_LOG = 256 * 1024     # keep logs small: trim to the last half when bigger
+SKIP_DIRS = {".git", ".venv", "node_modules"}
+UNITS = {"m": 60, "h": 3600, "d": 86400}
+
+def find_jobs():
+    for dirpath, dirnames, _ in os.walk(ROOT):
+        rel = os.path.relpath(dirpath, ROOT)
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
+                             and os.path.normpath(os.path.join(rel, d)) not in HIDDEN)
+        if Path(dirpath).name != "jobs":
+            continue
+        dirnames[:] = []
+        for f in sorted(Path(dirpath).iterdir()):
+            if not f.is_file() or not os.access(f, os.X_OK):
+                continue
+            try:
+                head = f.read_text(errors="replace").splitlines()[:20]
+            except OSError:
+                continue
+            m = next((re.search(r"#\s*every:\s*(\d+)\s*([mhd])\b", l) for l in head
+                      if re.search(r"#\s*every:", l)), None)
+            if m:
+                project = str(f.parent.parent.relative_to(ROOT)) if f.parent.parent != ROOT else ROOT.name
+                yield f"{project}/{f.name}", f, int(m.group(1)) * UNITS[m.group(2)]
+
+try:
+    HIDDEN = set(json.loads((ROOT / "cockpit.json").read_text()).get("hidden", []))   # skipped folders
+except (OSError, ValueError):
+    HIDDEN = set()
+
+def load_state():
+    try:
+        return json.loads((STATE / "state.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+def save_state(state):
+    tmp = STATE / "state.json.tmp"
+    tmp.write_text(json.dumps(state, indent=1))
+    tmp.replace(STATE / "state.json")
+
+def due_at(job_id, every, state):
+    s = state.get(job_id, {})
+    if not s: return 0
+    if s.get("ok"): return s["last"] + every
+    return s["last"] + min(RETRY, every)
+
+def run(job_id, path, state):
+    log = LOGS / (job_id.replace("/", "__") + ".log")
+    start = time.time()
+    with log.open("a") as fh:
+        fh.write(f"\n=== {time.strftime('%F %T')} start\n"); fh.flush()
+        try:
+            rc = subprocess.run([str(path)], cwd=path.parent.parent, stdout=fh, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, timeout=TIMEOUT).returncode
+        except subprocess.TimeoutExpired:
+            rc = "timeout"
+        except OSError as e:
+            fh.write(f"{e}\n"); rc = "error"
+        fh.write(f"=== {time.strftime('%F %T')} exit {rc} ({time.time() - start:.0f}s)\n")
+    if log.stat().st_size > MAX_LOG:
+        data = log.read_bytes()[-MAX_LOG // 2:]
+        log.write_bytes(data[data.find(b"\n") + 1:])
+    state[job_id] = {"last": start, "ok": rc == 0, "rc": rc}
+    save_state(state)
+    return rc
+
+def fmt(ts):
+    return time.strftime("%a %d.%m %H:%M", time.localtime(ts)) if ts else "—"
+
+def main():
+    LOGS.mkdir(parents=True, exist_ok=True)
+    args = sys.argv[1:]
+    state = load_state()
+    jobs = list(find_jobs())
+    if args[:1] == ["list"]:
+        for job_id, path, every in jobs:
+            s = state.get(job_id, {})
+            res = "never run" if not s else ("ok" if s.get("ok") else f"FAILED ({s.get('rc')})")
+            print(f"{job_id:40} every {every // 3600}h{every % 3600 // 60:02d}m  last {fmt(s.get('last'))}  "
+                  f"{res:12}  next {fmt(due_at(job_id, every, state)) if s else 'now'}")
+        return
+    lock = open(STATE / "lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.exit("claude-jobs: already running")
+    if args[:1] == ["run"] and len(args) == 2:
+        match = [(i, p) for i, p, _ in jobs if i == args[1]]
+        if not match: sys.exit(f"no such job: {args[1]} (see `claude-jobs list`)")
+        rc = run(*match[0], state)
+        print(f"{args[1]}: exit {rc}, log in {LOGS}")
+        sys.exit(0 if rc == 0 else 1)
+    now = time.time()
+    for job_id, path, every in jobs:
+        if due_at(job_id, every, state) <= now:
+            run(job_id, path, state)
+
+main()

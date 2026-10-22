@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to <workspace>/cockpit.json. colors: Konsole tab colour per folder path relative to the workspace (longest match wins; the root uses the workspace folder name). hidden: folders the dashboard and job runner skip. aliases: renamed folders (old name -> new name). old_roots: earlier workspace locations, so their transcripts still count.",
+  "colors": {
+    "claude": "#7EC8F7",
+    "work/reports": "#FFD600"
+  },
+  "hidden": [
+    "cockpit",
+    "tmp"
+  ],
+  "aliases": {},
+  "old_roots": []
+}
