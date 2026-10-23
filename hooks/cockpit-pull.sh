@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook: keep the cockpit current. On every prompt (at most once a minute) pull the cockpit
 # repo in the background, fast-forward only, never over local changes; re-run install.sh when the pull
-# touched install.sh, systemd/ or plugins/. What a pull brought in is reported on the next prompt.
+# touched install.sh, systemd/ or plugins/, else restart cockpit-web when its code changed. What a pull brought in is reported on the next prompt.
 # Log: ~/.cache/claude/cockpit-pull.log
 here=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 cache="$HOME/.cache/claude"; mkdir -p "$cache"
@@ -30,6 +30,8 @@ setsid bash -c '
   msg="Cockpit updated: $(git log --format=%s "$old..$new" | head -5 | paste -sd ";" | sed "s/;/; /g")"
   if git diff --name-only "$old" "$new" | grep -qE "^(install\.sh|systemd/|plugins/)"; then
     ./install.sh >/dev/null 2>&1 && msg="$msg (install.sh re-run; new hooks apply to sessions started from now on)"
+  elif git diff --name-only "$old" "$new" | grep -qE "^(bin/dashboard|bin/cockpit-web|lib/)"; then
+    systemctl --user try-restart cockpit-web.service 2>/dev/null   # the web dashboard runs the new code
   fi
   echo "$msg" > "$news"
 ' _ "$here" "$news" </dev/null >>"$log" 2>&1 &

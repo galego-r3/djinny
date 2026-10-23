@@ -8,6 +8,11 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   dismiss a question row (marks it idle, no tokens used). `q` quits. Starting `claude` in a Konsole window
   without a dashboard opens one in a new tab (DASH) next to it; `"dashboard_autostart": false` in
   `cockpit.json` turns that off.
+- **Web dashboard** (`cockpit-web`): the same as a page in the browser, served on `127.0.0.1:8765` by the
+  user service `cockpit-web.service` (always on). Click a project to go to its Konsole tab (or open one),
+  dismiss questions, tick to-dos; Tab/Shift+Tab switch tabs. With `"dashboard": "web"` in `cockpit.json`,
+  starting `claude` opens the page instead of a DASH tab (unless one is open). Its JSON API (`/api/state`,
+  `/api/open`, `/api/dismiss`, `/api/tick`, see `bin/cockpit-web`) is meant for other clients too.
 - **Tabs**: each session is named after its folder (at most two levels deep, like the dashboard rows) and gets its tab title and colour automatically. Tabs
   are kept sorted: DASH, the root, projects A–Z, unnamed tabs last. Leaving `claude` closes its tab.
 - **Status line**: model, context use, rate limits (▲ = used faster than the window passes), estimated
@@ -40,6 +45,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | --- | --- |
 | `bin/dashboard` | the TUI (Python 3, no dependencies) |
 | `bin/claude-jobs` | job runner |
+| `bin/cockpit-web`, `web/index.html` | the web dashboard: local server (stdlib, reuses `bin/dashboard`'s `snapshot()`) and its page; `systemd/cockpit-web.service` |
 | `bin/tab-color` | set a project's tab colour in `cockpit.json` and apply it to the tab |
 | `bin/secret` | short form of `secret-tool`: `secret set/get/del <service> [attr value]…`, `push`/`pull` to 1Password |
 | `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting, opens the dashboard tab if the window has none |

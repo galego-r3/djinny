@@ -1,0 +1,11 @@
+[Unit]
+Description=Cockpit dashboard as a local web page (cockpit-web)
+
+[Service]
+ExecStart=%h/.local/bin/cockpit-web serve
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

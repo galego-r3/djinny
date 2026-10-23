@@ -2,8 +2,9 @@
 # SessionStart hook: name the session (like /rename) after its folder path relative to the workspace, at most
 # "depth" levels (lib/env.sh ws_rel)
 # (e.g. "fun/chess"; the root itself is the workspace's name), colour the Konsole tab from the
-# workspace's cockpit.json, open the dashboard in a new tab if the window has none (on a fresh start, unless
-# cockpit.json has "dashboard_autostart": false) and re-sort the window's tabs.
+# workspace's cockpit.json, open the dashboard on a fresh start (unless cockpit.json has
+# "dashboard_autostart": false): with "dashboard": "web" the web page (cockpit-web open, if none is open),
+# else in a new tab if the window has none; and re-sort the window's tabs.
 . "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
 input=$(cat)
 name=$(ws_rel "$(jq -r '.cwd // empty' <<<"$input")")
@@ -21,8 +22,11 @@ if [ -n "$KONSOLE_DBUS_SERVICE" ] && [ -n "$KONSOLE_DBUS_SESSION" ]; then
   # it finds in a marker (shell/bashrc.sh); a fresh marker also keeps sessions starting together from
   # opening two. The claude tab stays active.
   m="$HOME/.cache/claude/dashstart"; win=${KONSOLE_DBUS_WINDOW:-}
-  if [ -n "$win" ] && [ "$(jq -r '.source // "startup"' <<<"$input")" = startup ] \
-     && [ "$(jq -r '.dashboard_autostart // true' "$conf" 2>/dev/null)" != false ] \
+  fresh=; [ "$(jq -r '.source // "startup"' <<<"$input")" = startup ] \
+     && [ "$(jq -r '.dashboard_autostart // true' "$conf" 2>/dev/null)" != false ] && fresh=1
+  if [ -n "$fresh" ] && [ "$(jq -r '.dashboard // "terminal"' "$conf" 2>/dev/null)" = web ]; then
+    setsid "$(dirname "$(readlink -f "$0")")/../bin/cockpit-web" open </dev/null >/dev/null 2>&1 &
+  elif [ -n "$win" ] && [ -n "$fresh" ] \
      && ! { [ -f "$m" ] && [ $(( $(date +%s) - $(stat -c %Y "$m") )) -lt 15 ]; }; then
     has_dash=
     for s in $(qdbus6 "$KONSOLE_DBUS_SERVICE" "$win" sessionList 2>/dev/null); do

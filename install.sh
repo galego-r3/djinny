@@ -4,7 +4,8 @@
 # - links bin/ into ~/.local/bin, hooks/ into ~/.claude/hooks, the status line to ~/.claude/statusline.sh
 # - registers the hooks, the status line and the mods in plugins/ (env CLAUDE_CODE_PLUGIN_DIRS) in
 #   ~/.claude/settings.json (adds only what is missing)
-# - installs and starts the systemd user timer claude-jobs.timer
+# - installs and starts the systemd user timer claude-jobs.timer and the service cockpit-web.service
+#   (restarted, so it runs the current code)
 # - sources shell/bashrc.sh from ~/.bashrc
 # - remembers the workspace in ~/.config/claude-cockpit/workspace
 # - rules: if <workspace>/rules/ is missing, asks whether to use the shared ruleset (clone of $CLAUDE_RULES_REPO)
@@ -78,9 +79,10 @@ jq --argjson plugins "$plugins" '
 if ! cmp -s "$tmp" "$settings"; then cp "$settings" "$settings.bak"; mv "$tmp" "$settings"; echo "updated $settings (backup: settings.json.bak)"
 else rm -f "$tmp"; fi
 
-cp "$here"/systemd/claude-jobs.{service,timer} ~/.config/systemd/user/
+cp "$here"/systemd/claude-jobs.{service,timer} "$here"/systemd/cockpit-web.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now claude-jobs.timer >/dev/null
+systemctl --user enable cockpit-web.service >/dev/null 2>&1; systemctl --user restart cockpit-web.service
 
 line="[ -f \"$here/shell/bashrc.sh\" ] && . \"$here/shell/bashrc.sh\"   # claude cockpit"
 touch ~/.bashrc

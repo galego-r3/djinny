@@ -502,24 +502,8 @@ def commands_frame(head, W, H):
     more = f"lines {SCROLL[0] + 1}–{SCROLL[0] + len(shown)} of {len(body)}, ↑/↓/wheel scroll · " if len(body) > room else ""
     return head + [""] + shown + [f"{DIM}{more}q to quit · Tab/Shift+Tab switch tabs{RST}"]
 
-def frame():
-    now = time.time()
-    all_rows, colors = load_rows(), load_colors()
-    tpath = todos.todo_file(ROOT, CONF)
-    n_todo = len(todos.open_items(tpath)) if tpath else 0
-    row_paths = sorted((r for r, _ in all_rows if r != NAME), key=len, reverse=True)   # usage counts for all
-    VIEWS[:] = views(all_rows)
-    if VIEW[0] not in VIEWS: VIEW[0] = "Active"     # e.g. the last project of a category was removed
-    windows, limits = rate_windows(now)
-    live, qfiles = live_states(row_paths)
-    remote = remote_states(row_paths)
-    active = [(r, st) for r, st in all_rows if r in RUNNING or r in live or r in remote]
-    if VIEW[0] in ("To-dos", "Commands"):
-        W, H = shutil.get_terminal_size((120, 40))
-        if VIEW[0] == "Commands": return commands_frame(header(limits, len(active), n_todo), W, H)
-        return todo_frame(header(limits, len(active), n_todo), W, H, colors)
-    rows = active if VIEW[0] == "Active" else sorted(
-        ((r, st) for r, st in all_rows if category(r) == VIEW[0]), key=lambda x: is_archived(x[1]))
+def usage_counts(windows, row_paths, now):
+    """Row -> [5h, 7d, all] tokens of this machine and, from their saved counts, the other machines."""
     usage, mine = {}, []
     for cwd, ts, n in transcript_entries():
         row = row_for(cwd, row_paths)
@@ -539,6 +523,64 @@ def frame():
                 start = int(h) * 3600
                 c[0] += round(n * min(1, max(0, (start + 3600 - windows["5h"]) / 3600)))
                 c[1] += round(n * min(1, max(0, (start + 3600 - windows["7d"]) / 3600)))
+    return usage
+
+def snapshot():
+    """Everything the dashboard shows, as plain data (for bin/cockpit-web). Also returns the question files
+    per row, for dismissing: (data, {row: [files]})."""
+    now = time.time()
+    all_rows, colors = load_rows(), load_colors()
+    row_paths = sorted((r for r, _ in all_rows if r != NAME), key=len, reverse=True)
+    windows, limits = rate_windows(now)
+    live, qfiles = live_states(row_paths)
+    remote = remote_states(row_paths)
+    usage = usage_counts(windows, row_paths, now)
+    rows = []
+    for rel, st in all_rows:
+        state = next((s for s in STATES if s in live.get(rel, ())), "")
+        r = remote.get(rel) if not state else None
+        rows.append({"name": rel, "category": category(rel), "status": st, "archived": is_archived(st),
+                     "color": color_of(rel, colors), "state": state, "running": rel in RUNNING or bool(state),
+                     "remote": {"state": r[0], "host": r[1]} if r else None, "action": ACTIONS.get(rel, ""),
+                     "tokens": usage.get(rel, [0, 0, 0]), "resumable": rel in ORPHANS})
+    path = todos.todo_file(ROOT, CONF)
+    todo = {"pinned": [], "chores": [], "sections": []}
+    if path:
+        try: intro = path.read_text().split("\n## ", 1)[0].splitlines()
+        except OSError: intro = []
+        todo["pinned"] = [l.replace("**", "") for l in intro if any(l.startswith(p) for p in CONF.get("todo_pinned", []))]
+        soon = (datetime.date.today() + datetime.timedelta(days=7)).isoformat()
+        todo["chores"] = [{"due": d, "project": p, "chore": c} for d, p, c, _ in todos.chores(ROOT, HIDDEN) if d <= soon]
+        for sec, i, text in todos.open_items(path):
+            if not todo["sections"] or todo["sections"][-1]["name"] != sec:
+                key = todos.section_project(sec)
+                todo["sections"].append({"name": sec, "color": STATES["question"] if key in ("Priority", "Questions from agents")
+                                         else color_of(NAME if key.startswith(NAME) else key, colors), "items": []})
+            todo["sections"][-1]["items"].append({"index": i, "text": text, "plain": todos.plain(text)})
+    data = {"name": NAME, "time": int(now), "states": STATES, "levels": LEVELS, "level_colors": LCOL,
+            "limits": {k: {"percent": v[0], "resets": v[1]} for k, v in limits.items()},
+            "views": views(all_rows), "rows": rows, "todos": todo}
+    return data, qfiles
+
+def frame():
+    now = time.time()
+    all_rows, colors = load_rows(), load_colors()
+    tpath = todos.todo_file(ROOT, CONF)
+    n_todo = len(todos.open_items(tpath)) if tpath else 0
+    row_paths = sorted((r for r, _ in all_rows if r != NAME), key=len, reverse=True)   # usage counts for all
+    VIEWS[:] = views(all_rows)
+    if VIEW[0] not in VIEWS: VIEW[0] = "Active"     # e.g. the last project of a category was removed
+    windows, limits = rate_windows(now)
+    live, qfiles = live_states(row_paths)
+    remote = remote_states(row_paths)
+    active = [(r, st) for r, st in all_rows if r in RUNNING or r in live or r in remote]
+    if VIEW[0] in ("To-dos", "Commands"):
+        W, H = shutil.get_terminal_size((120, 40))
+        if VIEW[0] == "Commands": return commands_frame(header(limits, len(active), n_todo), W, H)
+        return todo_frame(header(limits, len(active), n_todo), W, H, colors)
+    rows = active if VIEW[0] == "Active" else sorted(
+        ((r, st) for r, st in all_rows if category(r) == VIEW[0]), key=lambda x: is_archived(x[1]))
+    usage = usage_counts(windows, row_paths, now)
     DISMISS.clear(); CLICK.clear()
 
     W, H = shutil.get_terminal_size((120, 40))
@@ -705,4 +747,5 @@ def main():
         sys.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[?1049l")
         sys.stdout.flush()
 
-main()
+if __name__ == "__main__":
+    main()
