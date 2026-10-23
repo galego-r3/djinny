@@ -28,7 +28,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   reads it. A shorter way to type `secret-tool store --label=… service …`. With `vault` set in `cockpit.json`
   and the 1Password CLI (`op`, app integration on), every secret is also kept in that 1Password vault:
   `secret push` copies the keyring into it, `secret pull` fills a new machine's keyring from it, and
-  `secret get` falls back to it. Jobs still read the keyring, so they run without 1Password.
+  `secret get` falls back to it. Jobs still read the keyring, so they run without 1Password. With a 1Password **service account** limited to that vault (its token stored by
+  `secret set op-service-account vault <vault>`, keyring only), `op` never asks to unlock 1Password.
 - **Git before every answer**: each prompt first pulls the session's own repo (at most once a minute, a few
   seconds at most, fast-forward only, never over local changes) and tells Claude which files came in.
   `"after_pull"` in `cockpit.json` runs a command when the workspace repo moved (e.g. to clone new repos).
