@@ -6,7 +6,10 @@ installed for (here: the parent of this file's folder).
 
 - **C1. Projects.** A project is a folder with its own `CLAUDE.md` and no project below it. Parent folders
   only group projects: they hold no files and no `CLAUDE.md`. Work happens inside the project folder; read
-  its `CLAUDE.md` first. Every project `CLAUDE.md` starts with a **`Status:` line** right under its title:
+  its `CLAUDE.md` first. The dashboard shows projects at most two levels deep (`group/project`, setting
+  `depth` in `cockpit.json`): a project further down (e.g. one worktree per session in `code/wba/wba-31`) is
+  counted toward its ancestor at that depth (`code/wba`), whose `CLAUDE.md` then holds the `Status:` line.
+  Every project `CLAUDE.md` starts with a **`Status:` line** right under its title:
   one short line on where the project stands now. Update it whenever that changes; the dashboard shows it.
   **Archiving**: a finished project gets `Status: archived YYYY-MM-DD — <one line on the outcome>`. It stays
   where it is, but the dashboard no longer lists it and its jobs stop. Remove the word to bring it back.
@@ -15,7 +18,8 @@ installed for (here: the parent of this file's folder).
   the Konsole tab title, tab colour and the status-line logo, and re-sorts the tabs. Don't rename sessions.
   Colours come from `colors` in the workspace's `cockpit.json` (longest matching path wins). Every project
   has its own colour; projects in the same parent folder get shades of one hue. A new project gets a
-  colour that fits these rules (add it to `cockpit.json`).
+  colour that fits these rules: `tab-color <colour> [<project>]` adds it to `cockpit.json` and colours
+  the tab now. When the user names a colour for a session ("use red"), run `tab-color red` there.
 - **C3. Temporary files** go in `<workspace>/tmp/<project>/` (screenshots, downloads, test output), never
   in `~`, `/tmp` or other places outside the workspace, so no extra permissions are needed. `tmp/` is not
   versioned; anything in it may be deleted. Keep files that matter in the project folder.

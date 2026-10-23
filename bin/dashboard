@@ -6,10 +6,12 @@ Four tabs (Tab key or click): Active, Archive (projects whose Status: line start
 To-dos (the to-do file from cockpit.json "todo_file" plus chores due within 7 days; click ☐ to tick an item)
 and Commands (the cockpit's commands with the usage lines from their headers, plus cockpit.json "commands":
 {"command": "what it does"}). Scroll with the wheel or ↑/↓/PgUp/PgDn when a tab doesn't fit.
-One row per project: colour, live state, status line, tokens used in the current 5h window, the current
+One row per project: colour, live state, status line, last tool call of a running session, tokens used in the
+current 5h window, the current
 7d window and all time.
 - Project = folder with a CLAUDE.md and no project below it (parent folders don't count); the root's row
-  has the workspace's name. Folders in cockpit.json "hidden" and archived projects (Status: archived …)
+  has the workspace's name. Rows go at most cockpit.json "depth" (default 2) levels deep: a project deeper
+  down (e.g. a worktree in code/wba/wba-31) is counted toward its ancestor at that depth (code/wba). Folders in cockpit.json "hidden" and archived projects (Status: archived …)
   are skipped.
 - Live state = busy / question / monitoring, written by hooks/session-state.sh.
 - Status = the "Status:" line under the title of the project's CLAUDE.md.
@@ -49,6 +51,7 @@ OLD_ROOTS = [Path(p).expanduser() for p in CONF.get("old_roots", [])]   # where 
 ALIASES = CONF.get("aliases", {})                    # renamed folders (old name -> new name)
 SKIP_DIRS = {".git", ".venv", "node_modules"}
 HIDDEN = set(CONF.get("hidden", []))                 # folder paths relative to ROOT
+DEPTH = int(CONF.get("depth", 2))                    # deepest row: group/project; deeper folders count toward it
 REFRESH = 2                                          # seconds between redraws
 
 STATES = {"question": "#E53935", "busy": "#FFD600", "monitoring": "#42A5F5"}   # priority: first wins
@@ -72,6 +75,7 @@ def status_of(d):
         pass
     return "—"
 
+FOLDERS = {}   # folder name of every project found -> its row, for transcripts from before a move
 def load_rows():
     found = []
     for dirpath, dirnames, filenames in os.walk(ROOT):
@@ -79,7 +83,12 @@ def load_rows():
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
                              and os.path.normpath(os.path.join(rel, d)) not in HIDDEN)
         if "CLAUDE.md" in filenames and Path(dirpath) != ROOT:
-            found.append(str(Path(dirpath).relative_to(ROOT)))
+            # Rows go at most DEPTH levels deep: a deeper project (e.g. a worktree in code/wba/wba-31) is
+            # shown as its ancestor at that depth (code/wba), which collects its state and tokens
+            parts = Path(dirpath).relative_to(ROOT).parts
+            found.append("/".join(parts[:DEPTH]))
+            FOLDERS[parts[-1]] = "/".join(parts[:DEPTH])
+    found = sorted(set(found))
     projects = [p for p in found if not any(q.startswith(p + "/") for q in found)]   # leaves only
     return [(NAME, status_of(ROOT))] + [(p, status_of(ROOT / p)) for p in sorted(projects)]
 
@@ -111,8 +120,8 @@ def row_for(cwd, row_paths):
             # Folder was renamed or moved (e.g. chess -> fun/chess): match by folder name
             for part in rel.split("/"):
                 part = ALIASES.get(part, part)
-                hit = next((r for r in row_paths if r.rsplit("/", 1)[-1] == part), None)
-                if hit: return hit
+                hit = next((r for r in row_paths if r.rsplit("/", 1)[-1] == part), None) or FOLDERS.get(part)
+                if hit in row_paths: return hit
             if rel.split("/")[0] in HIDDEN: return NAME   # e.g. the cockpit itself: shown as the root
             return None                              # folder no longer exists: not shown
     return None
@@ -173,25 +182,103 @@ def alive(pid):
     try: return (Path(f"/proc/{pid}/comm")).read_text().strip() == "claude"   # not a reused PID after a reboot
     except OSError: return False
 
+def tail_lines(path, size=262144):
+    """The last complete lines of a file (transcripts get big, only the end is read)."""
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, 2); end = fh.tell(); fh.seek(max(0, end - size))
+            lines = fh.read().decode(errors="replace").splitlines()
+        return lines[1:] if end > size else lines
+    except OSError:
+        return []
+
+def short_path(p, cwd):
+    p = str(p or "")
+    if cwd and p.startswith(cwd + "/"): return p[len(cwd) + 1:]
+    return "~" + p[len(str(HOME)):] if p.startswith(str(HOME) + "/") else p
+
+def first_line(s):
+    return next((l.strip() for l in str(s or "").splitlines() if l.strip()), "")
+
+def action(name, i, cwd):
+    """What a tool call did, e.g. "bash: git push", "edit: lib.php" — only what Claude wrote, never prompt text."""
+    f = short_path(i.get("file_path") or i.get("notebook_path") or i.get("path"), cwd)
+    if name == "Bash":
+        c = re.sub(r"^(cd [^&;|]+(&&|;) *)+", "", first_line(i.get("command")))
+        if (len(c) > 70 or "\n" in str(i.get("command", ""))) and i.get("description"): c = i["description"]
+        return ("bash (background)" if i.get("run_in_background") else "bash") + ": " + c
+    if name == "SendMessage": return f"message → {i.get('to', '?')}: {first_line(i.get('summary') or i.get('message'))}"
+    if name in ("Edit", "Write", "Read", "NotebookEdit"): return f"{name.lower()}: {f}"
+    if name == "Agent": return f"agent: {first_line(i.get('description'))}"
+    if name == "Skill": return f"skill: {i.get('skill', '?')} {first_line(i.get('args'))}".rstrip()
+    if name == "AskUserQuestion": return "question: " + first_line((i.get("questions") or [{}])[0].get("question"))
+    if name == "ExitPlanMode": return "plan: ready for approval"
+    if name in ("Grep", "Glob"): return f"search: {i.get('pattern', '')}" + (f" in {f}" if f else "")
+    if name == "WebSearch": return f"web search: {i.get('query', '')}"
+    if name == "WebFetch": return f"fetch: {i.get('url', '')}"
+    if name == "ScheduleWakeup": return f"sleep: {i.get('reason', '')}"
+    if name.startswith("mcp__"): return "mcp: " + name[5:].replace("__", " ", 1)
+    return name.lower() + (f": {f}" if f else f": {first_line(i['description'])}" if i.get("description") else "")
+
+_actions = {}   # transcript -> (mtime, size, last action)
+def last_action(sid, cwd):
+    """The session's last tool call, from the tail of its transcript."""
+    path = HOME / ".claude/projects" / re.sub(r"[^A-Za-z0-9]", "-", cwd) / f"{sid}.jsonl"
+    try: st = path.stat()
+    except OSError: return ""
+    cached = _actions.get(path)
+    if cached and cached[:2] == (st.st_mtime, st.st_size): return cached[2]
+    act = ""
+    for line in reversed(tail_lines(path)):
+        if '"tool_use"' not in line: continue
+        try:
+            e = json.loads(line)
+            calls = [c for c in (e.get("message") or {}).get("content") or [] if c.get("type") == "tool_use"]
+            if calls: act = action(calls[-1].get("name", ""), calls[-1].get("input") or {}, cwd); break
+        except (ValueError, AttributeError, TypeError):
+            continue
+    _actions[path] = (st.st_mtime, st.st_size, act)
+    return act
+
+REGISTRY = {"busy": "busy", "shell": "monitoring", "waiting": "question"}   # Claude Code's own session states
 QDIR = ROOT / ".cockpit/questions"   # saved questions, one file per session (hooks/session-state.sh)
 ORPHANS = {}   # row -> session id of a saved question whose session isn't running, refreshed every frame
+ACTIONS = {}   # row -> last tool call of its most recently active running session, refreshed every frame
 def live_states(row_paths):
     """Row -> set of live states, and row -> dismiss actions: saved question files plus live state files
-    waiting at a permission/question dialog."""
+    waiting at a permission/question dialog. Sessions without a state file (started before the hooks were
+    installed) fall back to Claude Code's own registry in ~/.claude/sessions/<pid>.json."""
     live, files = {}, {}
-    ORPHANS.clear()
+    ORPHANS.clear(); ACTIONS.clear()
     running = set()        # rows with a running session
+    hooked = set()         # pids with a state file from the hook
     for f in (HOME / ".cache/claude/sessions").glob("*.json"):
         try:
             st = json.loads(f.read_text())
             if not alive(st["pid"]):
                 f.unlink(); continue                 # that Claude process is gone
+            hooked.add(st["pid"])
             row = row_for(st["cwd"], row_paths)
             if not row: continue
             running.add(row)
             state = {"input": "question"}.get(st["state"], st["state"])
             live.setdefault(row, set()).add(state)
             if state == "question": files.setdefault(row, []).append(f)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    newest = {}            # row -> updatedAt of the session its action comes from
+    for f in (HOME / ".claude/sessions").glob("*.json"):
+        try:
+            st = json.loads(f.read_text())
+            if st.get("kind", "interactive") != "interactive" or not alive(st["pid"]): continue
+            row = row_for(st["cwd"], row_paths)
+            if not row: continue
+            running.add(row)
+            if st["pid"] not in hooked and st.get("status") in REGISTRY and st.get("waitingFor") != "dialog open":
+                live.setdefault(row, set()).add(REGISTRY[st["status"]])
+            if st.get("updatedAt", 0) >= newest.get(row, -1):
+                newest[row] = st.get("updatedAt", 0)
+                ACTIONS[row] = last_action(st.get("sessionId", ""), st["cwd"])
         except (OSError, ValueError, KeyError, TypeError):
             continue
     for f in sorted(QDIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True):
@@ -368,15 +455,19 @@ def frame():
     NUMW, STATEW = 6, 12                 # state column fits "monitoring" plus a gap
     namew = min(28, max(len(r) for r, _ in rows))
     fixed = 3 + namew + 2 + STATEW + 2 + 3 * NUMW + 2
-    statw = max(12, min(max(len(s) for _, s in rows), W - fixed - 1))
+    # Last tool call of running sessions, in its own column when the terminal has room for it
+    actw = min(48, W - fixed - 12 - 3) if any(ACTIONS.get(r) for r, _ in rows) else 0
+    actw = actw if actw >= 20 else 0
+    actcol = actw + 2 if actw else 0
+    statw = max(12, min(max(len(s) for _, s in rows), W - fixed - 1 - actcol))
 
     out = header(limits, n_arch, n_todo)
-    pad = " " * (3 + namew + 2 + STATEW + statw + 2)
+    pad = " " * (3 + namew + 2 + STATEW + statw + 2 + actcol)
     out.append(pad + " ".join(f"{BOLD}{esc(c)}{t:>{NUMW}}{RST}" for t, c in zip(("5h", "7d", "all"), HCOL)))
 
     # Each row gets a line of "▔" below it: a thin border in the row's colour (top eighth of the
     # cell, ~3px) with empty space under it
-    rule_w = 3 + namew + 2 + STATEW + statw + 2 + 3 * NUMW + 2
+    rule_w = 3 + namew + 2 + STATEW + statw + 2 + actcol + 3 * NUMW + 2
     tot, body, at = [0, 0, 0], [], {}               # at: body line -> project, for clicks
     for rel, st in rows:
         at[len(body)] = at[len(body) + 1] = rel
@@ -393,9 +484,10 @@ def frame():
         u = usage.get(rel, [0, 0, 0])
         tot = [a + b for a, b in zip(tot, u)]
         nums = " ".join(f"{heat(n, i)}{human(n):>{NUMW}}{RST}" for i, n in enumerate(u))
+        act = f"{DIM}{cut(ACTIONS.get(rel, ''), actw):<{actw}}{RST}  " if actw else ""
         body.append(f"{sw} {cut(rel, namew):<{namew}}  "
                    f"{BOLD}{esc(STATES[state]) if state else ''}{label}{' ' * (STATEW - width)}{RST}"
-                   f"{cut(st, statw):<{statw}}  {nums}")
+                   f"{cut(st, statw):<{statw}}  {act}{nums}")
         body.append((esc(col) if col else DIM) + "▔" * rule_w + RST)
     room = max(2, H - len(out) - 2)                 # the rows scroll; header, total and help line stay
     SCROLL[0] = max(0, min(SCROLL[0], len(body) - room))
@@ -405,7 +497,7 @@ def frame():
     more = f" · rows {SCROLL[0] // 2 + 1}–{(SCROLL[0] + room) // 2} of {len(rows)}, ↑/↓/wheel scroll" if len(body) > room else ""
     nums = " ".join(f"{human(n):>{NUMW}}" for n in tot)
     out.append(f"   {BOLD}{'total':<{namew}}{RST}  {'':<{STATEW}}"
-               f"{DIM}{cut('tokens = input + cache writes + output', statw):<{statw}}{RST}  {BOLD}{nums}{RST}")
+               f"{DIM}{cut('tokens = input + cache writes + output', statw):<{statw}}{RST}  {' ' * actcol}{BOLD}{nums}{RST}")
     out.append(f"{DIM}q to quit · Tab switches tabs · click a name to go to its tab · 1-9 dismisses that ❓ · refreshes every {REFRESH}s{more}{RST}")
     return out
 

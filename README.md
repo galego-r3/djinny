@@ -3,13 +3,16 @@
 A terminal cockpit for running many Claude Code sessions side by side, one per project, in KDE Konsole tabs.
 
 - **Dashboard** (`dashboard`): a full-screen TUI with one row per project. Each row shows the tab colour,
-  the live state (busy / question / monitoring), the project's `Status:` line and tokens used (5h / 7d /
-  all time). Click a project to switch to its tab, or to open a new tab that starts `claude`. Press 1–9 to
+  the live state (busy / question / monitoring), the project's `Status:` line, the last tool call of a running
+  session ("bash: git push", "edit: lib.php") and tokens used (5h / 7d / all time). Click a project to switch to its tab, or to open a new tab that starts `claude`. Press 1–9 to
   dismiss a question row (marks it idle, no tokens used). `q` quits.
 - **Tabs**: each session is named after its folder and gets its tab title and colour automatically. Tabs
   are kept sorted: DASH, the root, projects A–Z, unnamed tabs last. Leaving `claude` closes its tab.
-- **Status line**: model, context use, rate limits, estimated cost, plus a big two-line logo of the
-  project name in its tab colour.
+- **Status line**: model, context use, rate limits (▲ = used faster than the window passes), estimated
+  cost, other projects waiting with a question (❓), plus a big two-line logo of the project name in its tab
+  colour.
+- **Tab colours** (`tab-color`): `tab-color red` saves the current project's colour in `cockpit.json` and
+  colours its tab now; sessions run it when the user names a colour.
 - **Jobs** (`claude-jobs`): runs `<project>/jobs/<name>` scripts on their interval (systemd user timer).
 - **Archive**: a project whose `Status:` line starts with `archived` is hidden from the dashboard and its
   jobs stop (`RULES.md` C1).
@@ -23,6 +26,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | --- | --- |
 | `bin/dashboard` | the TUI (Python 3, no dependencies) |
 | `bin/claude-jobs` | job runner |
+| `bin/tab-color` | set a project's tab colour in `cockpit.json` and apply it to the tab |
 | `bin/secret` | short form of `secret-tool`: `secret set/get/del <service> [attr value]…` |
 | `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting |
 | `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) and saves open questions apart from the session in `<workspace>/.cockpit/questions/` (versioned, so they move between machines) |
@@ -62,13 +66,16 @@ installer links as `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) 
   "colors":    { "claude": "#7EC8F7", "work/reports": "#FFD600" },
   "hidden":    ["cockpit", "tmp"],
   "aliases":   { "old-name": "new-name" },
-  "old_roots": ["~/old/workspace/location"]
+  "old_roots": ["~/old/workspace/location"],
+  "depth":     2
 }
 ```
 
 - `colors`: Konsole tab colour per folder path, relative to the workspace. The longest match wins, so a
   colour on a parent folder covers all its projects. The root is listed under the workspace folder's name.
 - `hidden`: folders that the dashboard and the job runner skip.
+- `depth` (default 2): how deep dashboard rows go. Deeper projects, e.g. worktrees in `group/repo/worktree`,
+  count toward their ancestor at that depth.
 - `aliases` / `old_roots`: renamed folders and earlier workspace locations, so that older transcripts
   still count toward the right project's token use.
 
@@ -80,7 +87,11 @@ The workspace location comes from `$CLAUDE_WORKSPACE`, or else from `~/.config/c
 - **Live state**: the hooks `UserPromptSubmit`, `PostToolUse`, `Notification`, `Stop` and `SessionEnd`
   write `~/.cache/claude/sessions/<session id>.json`. A session counts as **question** when its last reply
   contains a `?` or `Your turn:` in its last 300 characters, or a permission dialog is open. It counts as
-  **monitoring** when a wakeup, monitor or background task is pending.
+  **monitoring** when a wakeup, monitor or background task is pending. Sessions without a state file (started
+  before the hooks were installed) fall back to Claude Code's own registry in `~/.claude/sessions/<pid>.json`
+  (`busy`, `shell` = monitoring, `waiting` = question unless only a dialog the user opened).
+- **Last action**: the last `tool_use` in the tail of a running session's transcript, worded as what was done,
+  never prompt text.
 - **Token use**: comes from the transcripts in `~/.claude/projects`, counting input + cache writes +
   output (cache reads are left out). The 5h / 7d windows line up with the subscription limits that the
   status line caches.

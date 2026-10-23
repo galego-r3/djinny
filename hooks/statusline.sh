@@ -66,18 +66,39 @@ rl=$(jq -c '.rate_limits // empty' <<<"$input")
 if [[ -n $rl ]]; then
   mkdir -p ~/.cache/claude && printf '%s\n' "$rl" > ~/.cache/claude/rate-limits.json
 fi
-for win in five_hour:5h seven_day:7d; do
-  key=${win%%:*}; label=${win##*:}
+now=$(date +%s)
+for win in five_hour:5h:18000 seven_day:7d:604800; do
+  IFS=: read -r key label span <<<"$win"
   p=$(j ".rate_limits.$key.used_percentage")
   [[ -z $p ]] && continue
-  r=$(reset_at "$(j ".rate_limits.$key.resets_at")")
+  ts=$(j ".rate_limits.$key.resets_at")
+  r=$(reset_at "$ts")
   c=$(pct_color "$p")
-  parts+=("${BLUE}${label}${RESET} ${c}${p}%${RESET}${r:+ ${WHITE}↻ ${r}${RESET}}")
+  # Pace: more than 5 points ahead of the share of the window already gone -> ▲ (at that rate the limit is hit early)
+  pace=""
+  if [[ $ts =~ ^[0-9]+$ ]] && (( ts > now )); then
+    gone=$(( 100 - (ts - now) * 100 / span ))
+    (( ${p%.*} > gone + 5 )) && pace=" ${YELLOW}▲${gone}%${RESET}"
+  fi
+  parts+=("${BLUE}${label}${RESET} ${c}${p}%${RESET}${pace}${r:+ ${WHITE}↻ ${r}${RESET}}")
 done
 
 # Estimated cost (API list price; not billed on a subscription)
 cost=$(j '.cost.total_cost_usd')
 [[ -n $cost ]] && parts+=("${YELLOW}~\$$(LC_NUMERIC=C printf '%.2f' "$cost")${RESET} ${DIM}est.${RESET}")
+
+# Other sessions waiting for the user (live state from hooks/session-state.sh), by project name
+. "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
+me=$(j '.session_id')
+waiting=()
+for f in ~/.cache/claude/sessions/*.json; do
+  [[ -f $f && $(basename "$f" .json) != "$me" ]] || continue
+  read -r st qpid qcwd < <(jq -r '[.state, .pid, .cwd] | @tsv' "$f" 2>/dev/null) || continue
+  [[ $st == question && $(cat "/proc/$qpid/comm" 2>/dev/null) == claude ]] || continue
+  n=$(ws_rel "$qcwd"); n=${n:-$(basename "$qcwd")}
+  [[ " ${waiting[*]} " == *" $n "* ]] || waiting+=("$n")
+done
+(( ${#waiting[@]} )) && parts+=("${RED}❓ ${waiting[*]}${RESET}")
 
 out=""
 for p in "${parts[@]}"; do
@@ -103,7 +124,6 @@ plain=$(sed $'s/\e\[[0-9;]*m//g' <<<"$out")
 
 # Folder name as in the session/tab name: path relative to the workspace, e.g. "family/schule"
 # (the root itself is the workspace's name), otherwise the current directory's own name.
-. "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
 cwd=$(j '.workspace.current_dir'); cwd=${cwd:-$(j '.cwd')}; cwd=${cwd:-$PWD}
 dir=$(ws_rel "$cwd"); dir=${dir:-$(basename "$cwd")}
 

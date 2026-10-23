@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Set a project's tab colour: saved in the workspace's cockpit.json "colors" and applied to the Konsole tab now.
+#   tab-color <colour>                  the current project (the Claude session's folder, else the working dir)
+#   tab-color <colour> <project>        another project or a parent folder, path relative to the workspace
+#   tab-color none [<project>]          remove its entry (a parent folder's colour applies again, if any)
+# <colour>: #rrggbb or red, orange, yellow, green, teal, cyan, blue, purple, pink, white, grey.
+# Sessions run it when the user names a colour for them ("use red"); RULES.md C2.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
+usage() { sed -n '3,5s/^# //p' "$0" >&2; exit 2; }
+[ $# -ge 1 ] || usage
+
+case "${1,,}" in
+  red) hex='#E53935' ;; orange) hex='#FB8C00' ;; yellow) hex='#FDD835' ;; green) hex='#66BB6A' ;;
+  teal) hex='#009688' ;; cyan) hex='#00BCD4' ;; blue) hex='#5C6BC0' ;; purple) hex='#9C27B0' ;;
+  pink) hex='#EC407A' ;; white) hex='#FFFFFF' ;; grey|gray) hex='#9E9E9E' ;; none) hex= ;;
+  \#[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) hex=${1^^} ;;
+  *) usage ;;
+esac
+
+if [ $# -ge 2 ]; then
+  name=${2%/}
+else
+  # The calling Claude session's folder: walk up to the claude process and read its registry entry
+  # (~/.claude/sessions/<pid>.json); outside a session, the working directory
+  cwd=$PWD pid=$$
+  while [ "${pid:-0}" -gt 1 ]; do
+    [ -f "$HOME/.claude/sessions/$pid.json" ] && { cwd=$(jq -r '.cwd // empty' "$HOME/.claude/sessions/$pid.json"); break; }
+    pid=$(awk '{ print $4 }' "/proc/$pid/stat" 2>/dev/null) || break
+  done
+  name=$(ws_rel "${cwd:-$PWD}")
+  [ -n "$name" ] || { echo "$cwd is outside the workspace $ws" >&2; exit 1; }
+fi
+
+[ -f "$conf" ] || echo '{}' > "$conf"
+tmp=$(mktemp "$conf.XXXXXX")
+if [ -n "$hex" ]; then jq --indent 2 --arg p "$name" --arg c "$hex" '.colors[$p] = $c' "$conf" > "$tmp"
+else jq --indent 2 --arg p "$name" 'del(.colors[$p])' "$conf" > "$tmp"; fi
+mv "$tmp" "$conf"
+
+# Apply it to the calling tab now when that tab belongs to this project (the dashboard shows it at once anyway)
+now=$(ws_color "$name" || true)
+if [ $# -lt 2 ] && [ -n "${KONSOLE_DBUS_SERVICE:-}" ] && [ -n "${KONSOLE_DBUS_SESSION:-}" ] && [ -n "$now" ]; then
+  qdbus6 "$KONSOLE_DBUS_SERVICE" "$KONSOLE_DBUS_SESSION" setTabColor "$now" >/dev/null 2>&1 || true
+fi
+echo "$name: ${hex:-no own colour}${now:+ (tab colour now $now)}"
