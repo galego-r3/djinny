@@ -45,8 +45,8 @@ def load_conf():
     except (OSError, ValueError): return {}
 
 ROOT = workspace()
-NAME = ROOT.name                                     # row, session and tab name of the root itself
 CONF = load_conf()
+NAME = CONF.get("name") or ROOT.name                 # row, session and tab name of the root itself
 OLD_ROOTS = [Path(p).expanduser() for p in CONF.get("old_roots", [])]   # where the workspace lived before
 ALIASES = CONF.get("aliases", {})                    # renamed folders (old name -> new name)
 SKIP_DIRS = {".git", ".venv", "node_modules"}

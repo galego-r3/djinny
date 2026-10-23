@@ -1,12 +1,12 @@
 # Sourced by the cockpit's shell scripts. Sets:
 #   ws       workspace root: $CLAUDE_WORKSPACE, else ~/.config/claude-cockpit/workspace (written by
 #            install.sh), else ~/claude
-#   ws_name  its name, used for the root's session, tab and dashboard row (e.g. "claude")
 #   conf     the workspace's cockpit.json (tab colours etc., see README.md)
+#   ws_name  the root's session, tab and dashboard row name: cockpit.json "name", else the folder's name
 ws=${CLAUDE_WORKSPACE:-$(cat "$HOME/.config/claude-cockpit/workspace" 2>/dev/null)}
 ws=${ws:-$HOME/claude}; ws=${ws%/}
-ws_name=$(basename "$ws")
 conf="$ws/cockpit.json"
+ws_name=$(jq -r '.name // empty' "$conf" 2>/dev/null); ws_name=${ws_name:-$(basename "$ws")}
 
 # Session name of a directory: its path relative to the workspace, cut to cockpit.json "depth" levels
 # (default 2, as the dashboard rows: code/wba/wba-31 -> "code/wba"), $ws_name for the root itself, empty

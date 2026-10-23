@@ -17,7 +17,10 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 - **Archive**: a project whose `Status:` line starts with `archived` is hidden from the dashboard and its
   jobs stop (rules C1).
 - **Secrets** (`secret`): `secret set aligulac` stores an API key in the keyring (hidden prompt), `secret get`
-  reads it. A shorter way to type `secret-tool store --label=… service …`.
+  reads it. A shorter way to type `secret-tool store --label=… service …`. With `vault` set in `cockpit.json`
+  and the 1Password CLI (`op`, app integration on), every secret is also kept in that 1Password vault:
+  `secret push` copies the keyring into it, `secret pull` fills a new machine's keyring from it, and
+  `secret get` falls back to it. Jobs still read the keyring, so they run without 1Password.
 - **Updates**: every prompt pulls the cockpit in the background, so a change pushed from another machine
   arrives without doing anything; the next prompt says what came in.
 - **Rules**: not in here. They're a separate repo in `<workspace>/rules/` ([claude-rules](https://github.com/stemiwe/claude-rules));
@@ -30,7 +33,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `bin/dashboard` | the TUI (Python 3, no dependencies) |
 | `bin/claude-jobs` | job runner |
 | `bin/tab-color` | set a project's tab colour in `cockpit.json` and apply it to the tab |
-| `bin/secret` | short form of `secret-tool`: `secret set/get/del <service> [attr value]…` |
+| `bin/secret` | short form of `secret-tool`: `secret set/get/del <service> [attr value]…`, `push`/`pull` to 1Password |
 | `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting |
 | `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) and saves open questions apart from the session in `<workspace>/.cockpit/questions/` (versioned, so they move between machines) |
 | `hooks/cockpit-pull.sh` | UserPromptSubmit hook: pulls the cockpit in the background (at most once a minute, fast-forward only, never over local changes), re-runs `install.sh` when the pull touched it, `systemd/` or `plugins/`, reports the update on the next prompt; log `~/.cache/claude/cockpit-pull.log` |
@@ -66,6 +69,8 @@ installer links as `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) 
 
 ```json
 {
+  "name":      "claude",
+  "vault":     "cockpit",
   "colors":    { "claude": "#7EC8F7", "work/reports": "#FFD600" },
   "hidden":    ["cockpit", "tmp"],
   "aliases":   { "old-name": "new-name" },
@@ -74,8 +79,10 @@ installer links as `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) 
 }
 ```
 
+- `name`: the root's session, tab and dashboard row name; default: the workspace folder's name.
+- `vault`: a 1Password vault that `secret` mirrors every secret into (see Secrets); optional.
 - `colors`: Konsole tab colour per folder path, relative to the workspace. The longest match wins, so a
-  colour on a parent folder covers all its projects. The root is listed under the workspace folder's name.
+  colour on a parent folder covers all its projects. The root is listed under its `name`.
 - `hidden`: folders that the dashboard and the job runner skip.
 - `depth` (default 2): how deep dashboard rows go. Deeper projects, e.g. worktrees in `group/repo/worktree`,
   count toward their ancestor at that depth.
