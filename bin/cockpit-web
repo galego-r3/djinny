@@ -6,6 +6,7 @@ Installed by install.sh as the systemd user service cockpit-web.service (always 
   cockpit-web serve     run the server (what the service does); port: cockpit.json "web_port", default 8765
   cockpit-web open      open the page in the browser, unless one is open already (it polls every 2 s);
                         hooks/session-name.sh runs this when a session starts
+  cockpit-web open --new   open it even if one is open (what `dashboard` does with "dashboard": "web")
 
 Only on 127.0.0.1. API (also meant for other clients, e.g. a phone app through a tunnel):
   GET  /api/state       everything the dashboard shows (bin/dashboard snapshot())
@@ -94,6 +95,8 @@ def main():
     url = f"http://127.0.0.1:{PORT}/"
     if cmd == "serve":
         ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    elif cmd == "open" and "--new" in sys.argv:
+        webbrowser.open_new(url)
     elif cmd == "open":
         import urllib.request
         try:

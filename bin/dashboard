@@ -29,7 +29,8 @@ current 5h window, the current
   or dismisses it.
 - Dismiss: rows waiting with a question get a number; pressing it deletes their saved questions and marks
   sessions waiting at a dialog idle (no tokens used).
-`dashboard --once` prints a single frame and exits.
+`dashboard --once` prints a single frame and exits. With "dashboard": "web" in cockpit.json, `dashboard` opens the
+web dashboard (cockpit-web) in the browser instead; `dashboard --tui` still starts this one.
 """
 import calendar, datetime, json, os, re, select, shutil, signal, subprocess, sys, termios, time, tty
 from pathlib import Path
@@ -709,6 +710,8 @@ def handle_input(data):
     return redraw
 
 def main():
+    if CONF.get("dashboard") == "web" and "--tui" not in sys.argv and "--once" not in sys.argv:
+        os.execv(Path(__file__).resolve().parent / "cockpit-web", ["cockpit-web", "open", "--new"])
     if "--once" in sys.argv or not sys.stdout.isatty():
         print("\n".join(frame()))
         return

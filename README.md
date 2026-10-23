@@ -11,7 +11,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 - **Web dashboard** (`cockpit-web`): the same as a page in the browser, served on `127.0.0.1:8765` by the
   user service `cockpit-web.service` (always on). Click a project to go to its Konsole tab (or open one),
   dismiss questions, tick to-dos; Tab/Shift+Tab switch tabs. With `"dashboard": "web"` in `cockpit.json`,
-  starting `claude` opens the page instead of a DASH tab (unless one is open). Its JSON API (`/api/state`,
+  starting `claude` opens the page instead of a DASH tab (unless one is open), and `dashboard` opens it too
+  (`dashboard --tui` for the terminal one). Its JSON API (`/api/state`,
   `/api/open`, `/api/dismiss`, `/api/tick`, see `bin/cockpit-web`) is meant for other clients too.
 - **Tabs**: each session is named after its folder (at most two levels deep, like the dashboard rows) and gets its tab title and colour automatically. Tabs
   are kept sorted: DASH, the root, projects A–Z, unnamed tabs last. Leaving `claude` closes its tab.
