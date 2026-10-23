@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# SessionStart hook: name the session (like /rename) after its folder path relative to the workspace
+# SessionStart hook: name the session (like /rename) after its folder path relative to the workspace, at most
+# "depth" levels (lib/env.sh ws_rel)
 # (e.g. "fun/chess"; the root itself is the workspace's name), colour the Konsole tab from the
 # workspace's cockpit.json and re-sort the window's tabs.
 . "$(dirname "$(readlink -f "$0")")/../lib/env.sh"

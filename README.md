@@ -6,7 +6,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   the live state (busy / question / monitoring), the project's `Status:` line, the last tool call of a running
   session ("bash: git push", "edit: lib.php") and tokens used (5h / 7d / all time). Click a project to switch to its tab, or to open a new tab that starts `claude`. Press 1–9 to
   dismiss a question row (marks it idle, no tokens used). `q` quits.
-- **Tabs**: each session is named after its folder and gets its tab title and colour automatically. Tabs
+- **Tabs**: each session is named after its folder (at most two levels deep, like the dashboard rows) and gets its tab title and colour automatically. Tabs
   are kept sorted: DASH, the root, projects A–Z, unnamed tabs last. Leaving `claude` closes its tab.
 - **Status line**: model, context use, rate limits (▲ = used faster than the window passes), estimated
   cost, other projects waiting with a question (❓), plus a big two-line logo of the project name in its tab

@@ -8,13 +8,18 @@ ws=${ws:-$HOME/claude}; ws=${ws%/}
 ws_name=$(basename "$ws")
 conf="$ws/cockpit.json"
 
-# Session name of a directory: its path relative to the workspace ("family/schule"), $ws_name for the
-# root itself, empty outside the workspace
+# Session name of a directory: its path relative to the workspace, cut to cockpit.json "depth" levels
+# (default 2, as the dashboard rows: code/wba/wba-31 -> "code/wba"), $ws_name for the root itself, empty
+# outside the workspace
 ws_rel() {
+  local rel depth
   case "$1" in
-    "$ws") echo "$ws_name" ;;
-    "$ws"/*) echo "${1#"$ws"/}" ;;
+    "$ws") echo "$ws_name"; return ;;
+    "$ws"/*) rel=${1#"$ws"/} ;;
+    *) return ;;
   esac
+  depth=$(jq -r '.depth // 2' "$conf" 2>/dev/null); [[ $depth =~ ^[1-9][0-9]*$ ]] || depth=2
+  echo "$rel" | cut -d/ -f"1-$depth"
 }
 
 # Tab colour of a session name from cockpit.json "colors" (longest matching path wins), empty if none
