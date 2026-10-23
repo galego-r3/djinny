@@ -5,7 +5,8 @@
 #   question   — waiting for the user: permission/question dialog, or the turn ended with a question
 #   idle       — turn ended without a question (dashboard shows nothing)
 #   monitoring — turn ended but a wakeup/monitor/cron/background task is pending
-# The dashboard ignores files whose Claude process ($pid) is gone.
+# The dashboard drops files whose Claude process ($pid) is gone, except open questions: those stay
+# (orphaned) until answered in a resumed session or dismissed, so a restart doesn't lose them.
 dir="$HOME/.cache/claude/sessions"
 mkdir -p "$dir"
 in=$(cat)
@@ -13,7 +14,10 @@ sid=$(jq -r '.session_id // empty' <<<"$in"); [ -z "$sid" ] && exit 0
 event=$(jq -r '.hook_event_name // empty' <<<"$in")
 f="$dir/$sid.json"
 
-if [ "$event" = SessionEnd ]; then rm -f "$f"; exit 0; fi
+if [ "$event" = SessionEnd ]; then
+  [ "$(jq -r '.state // empty' "$f" 2>/dev/null)" = question ] || rm -f "$f"
+  exit 0
+fi
 
 # PID of the claude process that runs this hook (first "claude" ancestor)
 pid=$PPID

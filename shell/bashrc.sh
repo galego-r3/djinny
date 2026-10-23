@@ -9,9 +9,11 @@ claude() {
   return $rc
 }
 # A tab opened by the dashboard starts claude: the dashboard writes this folder into the marker
-# just before opening the tab (Konsole's D-Bus can't run commands in a tab).
+# just before opening the tab (Konsole's D-Bus can't run commands in a tab); a second line names a
+# session to resume (one that was waiting with a question when its process ended).
 _m="$HOME/.cache/claude/autostart"
-if [[ $- == *i* && -f $_m && $(<"$_m") == "$PWD" && $(( $(date +%s) - $(stat -c %Y "$_m") )) -lt 15 ]]; then
-  rm -f "$_m"; unset _m; claude
+if [[ $- == *i* && -f $_m && $(head -n1 "$_m") == "$PWD" && $(( $(date +%s) - $(stat -c %Y "$_m") )) -lt 15 ]]; then
+  _r=$(sed -n 2p "$_m"); rm -f "$_m"; unset _m
+  if [[ -n $_r ]]; then claude --resume "$_r"; else claude; fi
 fi
-unset _m
+unset _m _r

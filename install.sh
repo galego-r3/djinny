@@ -2,7 +2,8 @@
 # Installs the cockpit for the current user; safe to re-run (e.g. after moving the cockpit).
 #   ./install.sh [workspace]     workspace defaults to the cockpit's parent folder
 # - links bin/ into ~/.local/bin, hooks/ into ~/.claude/hooks, the status line to ~/.claude/statusline.sh
-# - registers the hooks and the status line in ~/.claude/settings.json (adds only what is missing)
+# - registers the hooks, the status line and the mods in plugins/ (env CLAUDE_CODE_PLUGIN_DIRS) in
+#   ~/.claude/settings.json (adds only what is missing)
 # - installs and starts the systemd user timer claude-jobs.timer
 # - sources shell/bashrc.sh from ~/.bashrc
 # - remembers the workspace in ~/.config/claude-cockpit/workspace
@@ -23,13 +24,16 @@ ln -sfn "$here/hooks/statusline.sh" ~/.claude/statusline.sh
 settings=~/.claude/settings.json
 [ -f "$settings" ] || echo '{}' > "$settings"
 tmp=$(mktemp)
-jq '
+plugins=$(for d in "$here"/plugins/*/; do [ -d "$d" ] && echo "${d%/}"; done | jq -R . | jq -s .)
+jq --argjson plugins "$plugins" '
   def add(ev; cmd): .hooks[ev] = ((.hooks[ev] // []) as $h
     | if any($h[]?.hooks[]?; .command == cmd) then $h else $h + [{hooks: [{type: "command", command: cmd}]}] end);
   add("SessionStart"; "~/.claude/hooks/session-name.sh")
   | reduce ("UserPromptSubmit", "PostToolUse", "Notification", "Stop", "SessionEnd") as $ev
       (.; add($ev; "~/.claude/hooks/session-state.sh"))
   | .statusLine //= {type: "command", command: "~/.claude/statusline.sh", refreshInterval: 30}
+  | .env.CLAUDE_CODE_PLUGIN_DIRS = ((.env.CLAUDE_CODE_PLUGIN_DIRS // "" | split(":") | map(select(. != ""))) as $have
+      | $have + ($plugins - $have) | join(":"))
 ' "$settings" > "$tmp"
 if ! cmp -s "$tmp" "$settings"; then cp "$settings" "$settings.bak"; mv "$tmp" "$settings"; echo "updated $settings (backup: settings.json.bak)"
 else rm -f "$tmp"; fi

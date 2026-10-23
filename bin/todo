@@ -1,0 +1,74 @@
+#!/usr/bin/env -S python3 -I
+"""Quick to-dos in the workspace's to-do file (cockpit.json "todo_file"), without a Claude session.
+
+  todo                         list open to-dos, numbered
+  todo <text>                  add to the current project's section (from the working directory),
+                               or to the default section (cockpit.json "todo_default") outside a project
+  todo -p <section> <text>     add to that section: a project path, or e.g. "Priority"
+  todo done <n>                tick off item n of the list
+
+"What — context" makes "What" bold, as in the rest of the file. The dashboard's To-dos tab shows the same list.
+"""
+import json, os, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import todos
+
+def workspace():
+    """Workspace root: $CLAUDE_WORKSPACE, else ~/.config/claude-cockpit/workspace (written by install.sh), else ~/claude."""
+    p = os.environ.get("CLAUDE_WORKSPACE", "")
+    if not p:
+        try: p = (Path.home() / ".config/claude-cockpit/workspace").read_text().strip()
+        except OSError: pass
+    return Path(p or "~/claude").expanduser()
+
+ROOT = workspace()
+try: CONF = json.loads((ROOT / "cockpit.json").read_text())
+except (OSError, ValueError): CONF = {}
+
+def current_section():
+    """Project of the working directory (nearest folder with a CLAUDE.md below the root), else the default."""
+    default = CONF.get("todo_default", "General")
+    try:
+        rel = Path.cwd().resolve().relative_to(ROOT.resolve())
+    except ValueError:
+        return default
+    if not rel.parts or rel.parts[0] in CONF.get("hidden", []):
+        return default
+    for p in [rel, *rel.parents]:
+        if p != Path(".") and (ROOT / p / "CLAUDE.md").exists():
+            return str(p)
+    return default
+
+def main():
+    path = todos.todo_file(ROOT, CONF)
+    if not path:
+        sys.exit('todo: no "todo_file" in cockpit.json')
+    args = sys.argv[1:]
+    items = todos.open_items(path)
+    if not args:
+        sec = None
+        for n, (s, _, text) in enumerate(items, 1):
+            if s != sec:
+                print(f"\n## {s}"); sec = s
+            print(f"{n:3}  {todos.plain(text)}")
+        return
+    if args[0] in ("-h", "--help"):
+        print(__doc__.strip()); return
+    if args[0] == "done":
+        if len(args) != 2 or not args[1].isdigit() or not 1 <= int(args[1]) <= len(items):
+            sys.exit(f"todo done <n>: n from `todo` (1–{len(items)})")
+        s, i, text = items[int(args[1]) - 1]
+        if not todos.tick(path, i, text):
+            sys.exit("todo: the file changed meanwhile, run `todo` again")
+        print(f"done: {todos.plain(text)}  [{s}]"); return
+    section = current_section()
+    if args[0] == "-p":
+        if len(args) < 3: sys.exit("todo -p <section> <text>")
+        section, args = args[1], args[2:]
+    text = " ".join(args).strip()
+    if not text: sys.exit("todo: empty text")
+    todos.add(path, section, text)
+    print(f"added to {section}: {text}")
+
+main()

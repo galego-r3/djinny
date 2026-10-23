@@ -25,7 +25,11 @@ installed for (here: the parent of this file's folder).
   runner `claude-jobs` (systemd user timer, every 5 min) runs whatever is due: `claude-jobs list` shows
   status, `claude-jobs run <project>/<name>` runs one now; logs in `~/.local/state/claude-jobs/logs/`.
   Jobs in the workspace root are named `<workspace name>/<name>`. Jobs run unattended: no prompts,
-  secrets from the keyring (`secret-tool`) or env vars, output files in the project folder.
+  secrets from the keyring or env vars, output files in the project folder.
+- **C6. Secrets** (API keys, passwords) live in the keyring, never in files or repos. To have the user store one,
+  ask for the short form `! secret set <service> [attr value]…` (e.g. `! secret set aligulac`; it prompts for
+  the value hidden), not a long `secret-tool store --label=…` line. Scripts read it with
+  `secret get <service> […]` or `secret-tool lookup service <service> […]` (same entry).
 - **C5. The cockpit itself** lives in `<workspace>/cockpit/` (its own git repo, generic: nothing about one
   person or workspace in it). It is changed from the workspace's root session; project sessions that need a
   change tell the user to do it there. Workspace-specific settings go in `<workspace>/cockpit.json`.

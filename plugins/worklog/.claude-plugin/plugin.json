@@ -1,0 +1,1 @@
+{ "name": "worklog", "version": "0.1.0", "description": "Side pane with the project's status, open questions for the user and a work log of the session", "types": "./types/index.d.ts" }

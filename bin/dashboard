@@ -2,7 +2,10 @@
 """Workspace dashboard, runs full-screen until you quit (q or Ctrl+C). Start it with `dashboard`
 (symlinked into ~/.local/bin by install.sh).
 
-Two tabs (Tab key or click): Active and Archive (projects whose Status: line starts with "archived").
+Four tabs (Tab key or click): Active, Archive (projects whose Status: line starts with "archived"),
+To-dos (the to-do file from cockpit.json "todo_file" plus chores due within 7 days; click ☐ to tick an item)
+and Commands (the cockpit's commands with the usage lines from their headers, plus cockpit.json "commands":
+{"command": "what it does"}). Scroll with the wheel or ↑/↓/PgUp/PgDn when a tab doesn't fit.
 One row per project: colour, live state, status line, tokens used in the current 5h window, the current
 7d window and all time.
 - Project = folder with a CLAUDE.md and no project below it (parent folders don't count); the root's row
@@ -12,12 +15,17 @@ One row per project: colour, live state, status line, tokens used in the current
 - Status = the "Status:" line under the title of the project's CLAUDE.md.
 - Colours = "colors" in the workspace's cockpit.json.
 - Tokens = input + cache writes + output from the transcripts in ~/.claude/projects (cache reads excluded).
-- Click a project name: switches to its Konsole tab, or opens a new tab there running `claude`.
+- Click a project name: switches to its Konsole tab, or opens a new tab there running `claude` (`claude
+  --resume <id>` when the row only has an orphaned question).
+- Questions survive restarts: when a session waiting with a question ends or its process dies, its state file
+  stays and the row keeps its ❓ until the session is resumed or the question dismissed.
 - Dismiss: rows waiting with a question get a number; pressing it marks those sessions idle (no tokens used).
 `dashboard --once` prints a single frame and exits.
 """
-import calendar, json, os, re, select, shutil, signal, subprocess, sys, termios, time, tty
+import calendar, datetime, json, os, re, select, shutil, signal, subprocess, sys, termios, time, tty
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))   # python3 -I: no automatic script dir
+import todos
 
 HOME = Path.home()
 def workspace():
@@ -75,9 +83,11 @@ def load_rows():
 
 def is_archived(status): return status.lower().startswith("archived")
 
-VIEWS = ["Active", "Archive"]   # dashboard tabs: projects in work / archived projects (RULES.md C1)
+VIEWS = ["Active", "Archive", "To-dos", "Commands"]   # projects in work / archived projects / to-dos / commands
 VIEW = [0]                      # index of the current tab
 TABS = []                       # (start column, end column, view index) of each tab label, for clicks
+TICK = {}                       # screen line -> (to-do file line index, item text) in the To-dos tab
+SCROLL = [0]                    # first body line shown (project rows, to-dos, commands)
 
 def load_colors():
     return load_conf().get("colors", {})              # re-read every frame: edits show up live
@@ -157,20 +167,31 @@ def rate_windows(now):
         pass
     return windows, limits
 
+def alive(pid):
+    try: return (Path(f"/proc/{pid}/comm")).read_text().strip() == "claude"   # not a reused PID after a reboot
+    except OSError: return False
+
+ORPHANS = {}   # row -> session id of an open question whose Claude process is gone, refreshed every frame
 def live_states(row_paths):
     live, files = {}, {}   # row -> set of states, row -> question state files
+    ORPHANS.clear()
+    running = set()        # rows with a running session
     for f in (HOME / ".cache/claude/sessions").glob("*.json"):
         try:
             st = json.loads(f.read_text())
-            if not Path(f"/proc/{st['pid']}").exists():
+            state = {"input": "question"}.get(st["state"], st["state"])
+            gone = not alive(st["pid"])
+            if gone and state != "question":
                 f.unlink(); continue                 # that Claude process is gone
             row = row_for(st["cwd"], row_paths)
             if not row: continue
-            state = {"input": "question"}.get(st["state"], st["state"])
+            if gone: ORPHANS.setdefault(row, f.stem)
+            else: running.add(row)
             live.setdefault(row, set()).add(state)
             if state == "question": files.setdefault(row, []).append(f)
         except (OSError, ValueError, KeyError, TypeError):
             continue
+    for row in running: ORPHANS.pop(row, None)
     return live, files
 
 DISMISS = {}   # key -> question state files of that row, refreshed every frame
@@ -199,13 +220,121 @@ def fmt_reset(ts):
     t = time.localtime(ts)
     return time.strftime("%H:%M" if time.strftime("%F", t) == time.strftime("%F") else "%a %H:%M", t)
 
+def header(limits, n_arch, n_todo):
+    head = f"{BOLD}{esc('#7EC8F7')}▌ {NAME} workspace{RST} {DIM}{time.strftime('%Y-%m-%d %H:%M:%S')}"
+    for label in ("5h", "7d"):
+        if label in limits:
+            pct, reset = limits[label]
+            head += f"  {label} {pct:.0f}% ↻ {fmt_reset(reset)}" if pct is not None else f"  {label} ↻ {fmt_reset(reset)}"
+        else:
+            head += f"  {label} rolling"
+    # Tab bar: filled buttons, the current tab in the header colour, the others grey
+    bar, col_ = " ", 2
+    TABS.clear()
+    for i, name in enumerate(VIEWS):
+        n = (None, n_arch, n_todo, None)[i]
+        label = f" {name} ({n}) " if n is not None else f" {name} "
+        TABS.append((col_, col_ + len(label) - 1, i))
+        bar += (f"{BOLD}{esc('#7EC8F7', bg=True)}{esc('#101820')}{label}{RST}" if i == VIEW[0]
+                else f"{esc('#3A3F47', bg=True)}{esc('#C8CCD2')}{label}{RST}") + " "
+        col_ += len(label) + 1
+    return [head + RST, bar]
+
+def todo_frame(head, W, H, colors):
+    """The To-dos tab: pinned lines, agent questions, chores due soon, open items per section."""
+    path = todos.todo_file(ROOT, CONF)
+    body = []                                         # (line, tick payload or None)
+    if not path:
+        body.append((f"  {DIM}no \"todo_file\" in cockpit.json{RST}", None))
+    else:
+        try: intro = path.read_text().split("\n## ", 1)[0].splitlines()
+        except OSError: intro = []
+        for line in intro:
+            if any(line.startswith(p) for p in CONF.get("todo_pinned", [])):
+                body.append((f"  {BOLD}{line.replace('**', '')}{RST}", None))
+        today = datetime.date.today()
+        soon = [c for c in todos.chores(ROOT, HIDDEN) if c[0] <= (today + datetime.timedelta(days=7)).isoformat()]
+        if soon:
+            body += [("", None), (f"{BOLD}{esc(STATES['monitoring'])}▌ Chores due{RST}", None)]
+            for due, proj, chore, _last in soon:
+                d = (datetime.date.fromisoformat(due) - today).days
+                when = "today" if d == 0 else f"{-d}d overdue" if d < 0 else f"in {d}d"
+                col = esc(STATES["question"]) if d < 0 else ""
+                body.append((f"    {col}{due} {when:<11}{RST} {cut(chore, W - 50)}  {DIM}{proj}{RST}", None))
+        sec = None
+        for s, i, text in todos.open_items(path):
+            if s != sec:
+                sec = s
+                key = todos.section_project(s)
+                col = (STATES["question"] if key in ("Priority", "Questions from agents")
+                       else color_of(NAME if key.startswith(NAME) else key, colors))
+                body += [("", None), (f"{BOLD}{esc(col) if col else ''}▌ {s}{RST}", None)]
+            body.append((f"    ☐ {cut(todos.plain(text), W - 8)}", (i, text)))
+    room = max(1, H - len(head) - 2)
+    SCROLL[0] = max(0, min(SCROLL[0], len(body) - room))
+    shown = body[SCROLL[0]:SCROLL[0] + room]
+    out = head + [""]
+    TICK.clear()
+    for line, payload in shown:
+        if payload: TICK[len(out)] = payload
+        out.append(line)
+    more = f" · {SCROLL[0] + 1}–{SCROLL[0] + len(shown)} of {len(body)} lines" if len(body) > room else ""
+    out.append(f"{DIM}q to quit · Tab switches tabs · click ☐ to tick an item · ↑/↓/wheel scroll{more}{RST}")
+    return out
+
+def usage_lines(path):
+    """(command, what it does) from a script's header: lines starting with its name, then 2+ spaces and the
+    description; indented lines without the name continue the description."""
+    out = []
+    try: head = path.read_text().splitlines()[:25]
+    except (OSError, UnicodeDecodeError): return out
+    for line in head:
+        line = line.lstrip("#").rstrip()
+        m = re.match(rf"\s+({re.escape(path.name)}\b.*?)\s{{2,}}(\S.*)$", line)
+        if m: out.append([m[1], m[2]])
+        elif out and line.startswith("  ") and line.strip() and not line.strip().startswith(path.name):
+            if len(line) - len(line.lstrip()) > 8: out[-1][1] += " " + line.strip()
+            else: break
+        elif out and not line.strip(): break
+    return out
+
+def commands_frame(head, W, H):
+    """The Commands tab: the cockpit's own commands (bin/) and the workspace's from cockpit.json "commands"."""
+    body = [f"{BOLD}{esc('#7EC8F7')}▌ Cockpit{RST}"]
+    for f in sorted((Path(__file__).resolve().parent).iterdir()):
+        if f.name == "dashboard": cmds = [["dashboard", "this view (dashboard --once prints one frame)"]]
+        else: cmds = usage_lines(f)
+        cw = max((len(c) for c, _ in cmds), default=0)
+        for c, d in cmds:
+            body.append(f"    {BOLD}{c:<{cw}}{RST}  {DIM}{cut(d, max(10, W - cw - 8))}{RST}")
+        if cmds: body.append("")
+    extra = CONF.get("commands", {})
+    if extra:
+        body.append(f"{BOLD}{esc('#7EC8F7')}▌ {NAME}{RST}")
+        cw = max(len(c) for c in extra)
+        for c, d in extra.items():
+            body.append(f"    {BOLD}{c:<{cw}}{RST}  {DIM}{cut(d, max(10, W - cw - 8))}{RST}")
+        body.append("")
+    body.append(f"{DIM}In a Claude session, start a line with ! to run a command there (e.g. ! secret set <service>).{RST}")
+    room = max(1, H - len(head) - 2)
+    SCROLL[0] = max(0, min(SCROLL[0], len(body) - room))
+    shown = body[SCROLL[0]:SCROLL[0] + room]
+    more = f" · {SCROLL[0] + 1}–{SCROLL[0] + len(shown)} of {len(body)} lines" if len(body) > room else ""
+    return head + [""] + shown + [f"{DIM}q to quit · Tab switches tabs · ↑/↓/wheel scroll{more}{RST}"]
+
 def frame():
     now = time.time()
     all_rows, colors = load_rows(), load_colors()
+    tpath = todos.todo_file(ROOT, CONF)
+    n_todo = len(todos.open_items(tpath)) if tpath else 0
     row_paths = sorted((r for r, _ in all_rows if r != NAME), key=len, reverse=True)   # usage counts for all
     n_arch = sum(is_archived(st) for _, st in all_rows)
     rows = [(r, st) for r, st in all_rows if is_archived(st) == (VIEW[0] == 1)]
     windows, limits = rate_windows(now)
+    if VIEW[0] >= 2:
+        W, H = shutil.get_terminal_size((120, 40))
+        if VIEW[0] == 3: return commands_frame(header(limits, n_arch, n_todo), W, H)
+        return todo_frame(header(limits, n_arch, n_todo), W, H, colors)
     usage = {}
     for cwd, ts, n in transcript_entries():
         row = row_for(cwd, row_paths)
@@ -223,32 +352,16 @@ def frame():
     fixed = 3 + namew + 2 + STATEW + 2 + 3 * NUMW + 2
     statw = max(12, min(max(len(s) for _, s in rows), W - fixed - 1))
 
-    head = f"{BOLD}{esc('#7EC8F7')}▌ {NAME} workspace{RST} {DIM}{time.strftime('%Y-%m-%d %H:%M:%S')}"
-    for label in ("5h", "7d"):
-        if label in limits:
-            pct, reset = limits[label]
-            head += f"  {label} {pct:.0f}% ↻ {fmt_reset(reset)}" if pct is not None else f"  {label} ↻ {fmt_reset(reset)}"
-        else:
-            head += f"  {label} rolling"
-    out = [head + RST]
-    # Tab bar: the current tab bold and underlined in the header colour
-    bar, col_ = " ", 2
-    TABS.clear()
-    for i, name in enumerate(VIEWS):
-        label = f" {name} ({n_arch}) " if i == 1 else f" {name} "
-        TABS.append((col_, col_ + len(label) - 1, i))
-        bar += (f"{BOLD}\x1b[4m{esc('#7EC8F7')}{label}{RST}" if i == VIEW[0] else f"{DIM}{label}{RST}") + " "
-        col_ += len(label) + 1
-    out.append(bar)
+    out = header(limits, n_arch, n_todo)
     pad = " " * (3 + namew + 2 + STATEW + statw + 2)
     out.append(pad + " ".join(f"{BOLD}{esc(c)}{t:>{NUMW}}{RST}" for t, c in zip(("5h", "7d", "all"), HCOL)))
 
     # Each row gets a line of "▔" below it: a thin border in the row's colour (top eighth of the
     # cell, ~3px) with empty space under it
     rule_w = 3 + namew + 2 + STATEW + statw + 2 + 3 * NUMW + 2
-    tot = [0, 0, 0]
+    tot, body, at = [0, 0, 0], [], {}               # at: body line -> project, for clicks
     for rel, st in rows:
-        CLICK[len(out)] = CLICK[len(out) + 1] = rel
+        at[len(body)] = at[len(body) + 1] = rel
         col = color_of(rel, colors)
         sw = f"{esc(col, bg=True)}  {RST}" if col else f"{DIM}░░{RST}"
         state = next((s for s in STATES if s in live.get(rel, ())), "")
@@ -262,14 +375,20 @@ def frame():
         u = usage.get(rel, [0, 0, 0])
         tot = [a + b for a, b in zip(tot, u)]
         nums = " ".join(f"{heat(n, i)}{human(n):>{NUMW}}{RST}" for i, n in enumerate(u))
-        out.append(f"{sw} {cut(rel, namew):<{namew}}  "
+        body.append(f"{sw} {cut(rel, namew):<{namew}}  "
                    f"{BOLD}{esc(STATES[state]) if state else ''}{label}{' ' * (STATEW - width)}{RST}"
                    f"{cut(st, statw):<{statw}}  {nums}")
-        out.append((esc(col) if col else DIM) + "▔" * rule_w + RST)
+        body.append((esc(col) if col else DIM) + "▔" * rule_w + RST)
+    room = max(2, H - len(out) - 2)                 # the rows scroll; header, total and help line stay
+    SCROLL[0] = max(0, min(SCROLL[0], len(body) - room))
+    for i, line in enumerate(body[SCROLL[0]:SCROLL[0] + room]):
+        if SCROLL[0] + i in at: CLICK[len(out)] = at[SCROLL[0] + i]
+        out.append(line)
+    more = f" · rows {SCROLL[0] // 2 + 1}–{(SCROLL[0] + room) // 2} of {len(rows)}, ↑/↓/wheel scroll" if len(body) > room else ""
     nums = " ".join(f"{human(n):>{NUMW}}" for n in tot)
     out.append(f"   {BOLD}{'total':<{namew}}{RST}  {'':<{STATEW}}"
                f"{DIM}{cut('tokens = input + cache writes + output', statw):<{statw}}{RST}  {BOLD}{nums}{RST}")
-    out.append(f"{DIM}q to quit · Tab switches Active/Archive · click a name to go to its tab · 1-9 dismisses that ❓ · refreshes every {REFRESH}s{RST}")
+    out.append(f"{DIM}q to quit · Tab switches tabs · click a name to go to its tab · 1-9 dismisses that ❓ · refreshes every {REFRESH}s{more}{RST}")
     return out
 
 # --- main loop ---------------------------------------------------------------------------------
@@ -286,16 +405,17 @@ def qdbus(*args):
     return r.stdout.strip() if r.returncode == 0 else None
 
 def goto_project(rel):
-    """Switch to the project's tab (title set by session-name.sh) or open one running claude."""
+    """Switch to the project's tab (title set by session-name.sh) or open one running claude, resuming
+    the session of an orphaned question."""
     win = os.environ.get("KONSOLE_DBUS_WINDOW")
     if not (win and os.environ.get("KONSOLE_DBUS_SERVICE")): return
     for sid in (qdbus(win, "sessionList") or "").split():
         if qdbus(f"/Sessions/{sid}", "tabTitleFormat", "0") == rel:
             qdbus(win, "setCurrentSession", sid); return
     # Konsole's D-Bus can't run commands in a tab: the new shell starts claude when it finds its folder
-    # in this marker (shell/bashrc.sh)
+    # in this marker, plus the session to resume on a second line (shell/bashrc.sh)
     cwd = str(ROOT if rel == NAME else ROOT / rel)
-    (HOME / ".cache/claude/autostart").write_text(cwd + "\n")
+    (HOME / ".cache/claude/autostart").write_text(cwd + "\n" + (ORPHANS.get(rel, "") + "\n" if rel in ORPHANS else ""))
     sid = qdbus(win, "newSession", qdbus(win, "defaultProfile") or "", cwd)
     if sid:
         qdbus(win, "setCurrentSession", sid)
@@ -306,17 +426,25 @@ def handle_input(data):
     if data in ("q", "Q", "\x1b"):
         return True
     redraw = None
+    for key, step in (("\x1b[A", -1), ("\x1b[B", 1), ("\x1b[5~", -10), ("\x1b[6~", 10)):   # ↑ ↓ PgUp PgDn
+        if key in data:
+            SCROLL[0] = max(0, SCROLL[0] + step * data.count(key)); data = data.replace(key, ""); redraw = False
     for b, x, y, kind in MOUSE.findall(data):
+        if b in ("64", "65") and kind == "M":                     # mouse wheel
+            SCROLL[0] = max(0, SCROLL[0] + (3 if b == "65" else -3)); redraw = False; continue
         if b != "0" or kind != "M": continue                      # left button press only
         if int(y) == 2:                                           # tab bar (second line)
             for start, end, i in TABS:
-                if start <= int(x) <= end: VIEW[0] = i; redraw = False
+                if start <= int(x) <= end: VIEW[0] = i; SCROLL[0] = 0; redraw = False
+        elif VIEW[0] == 2:
+            if int(y) - 1 in TICK and int(x) <= 6:                # the ☐ column
+                todos.tick(todos.todo_file(ROOT, CONF), *TICK[int(y) - 1]); redraw = False
         elif int(y) - 1 in CLICK:
             goto_project(CLICK[int(y) - 1]); redraw = False
     rest = MOUSE.sub("", data)
     for ch in rest:
         if ch in ("q", "Q"): return True
-        if ch == "\t": VIEW[0] = 1 - VIEW[0]; redraw = False
+        if ch == "\t": VIEW[0] = (VIEW[0] + 1) % len(VIEWS); SCROLL[0] = 0; redraw = False
         if ch in DISMISS: dismiss(ch); redraw = False
     return redraw
 

@@ -13,6 +13,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 - **Jobs** (`claude-jobs`): runs `<project>/jobs/<name>` scripts on their interval (systemd user timer).
 - **Archive**: a project whose `Status:` line starts with `archived` is hidden from the dashboard and its
   jobs stop (`RULES.md` C1).
+- **Secrets** (`secret`): `secret set aligulac` stores an API key in the keyring (hidden prompt), `secret get`
+  reads it. A shorter way to type `secret-tool store --label=… service …`.
 - **Rules** (`RULES.md`): the conventions the sessions follow. The workspace's `CLAUDE.md` loads them.
 
 ## Layout
@@ -21,10 +23,12 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | --- | --- |
 | `bin/dashboard` | the TUI (Python 3, no dependencies) |
 | `bin/claude-jobs` | job runner |
+| `bin/secret` | short form of `secret-tool`: `secret set/get/del <service> [attr value]…` |
 | `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting |
 | `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) |
 | `hooks/sort-tabs.sh` | sorts the Konsole tabs of the current window |
 | `hooks/statusline.sh` | Claude Code status line |
+| `plugins/worklog/` | Claude Code mod: side pane with the project's status, the open `Your turn:` questions and a work log; `/worklog` reopens it |
 | `shell/bashrc.sh` | sourced from `~/.bashrc`: dashboard-opened tabs start `claude`; `/exit` closes the tab |
 | `lib/env.sh` | shared shell helpers: workspace location, session names, colours |
 | `systemd/` | `claude-jobs.service` / `.timer` |
@@ -33,14 +37,16 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 
 ## Install
 
-Needs Linux, KDE Konsole (D-Bus via `qdbus6`), Claude Code, `jq`, Python 3 and systemd (user units).
+Needs Linux, KDE Konsole (D-Bus via `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) and
+`secret-tool` (`libsecret-tools`).
 
 1. Clone this repo into your workspace as `cockpit/`, e.g. `git clone … ~/claude/cockpit`.
 2. Run `cockpit/install.sh`. It takes the parent folder as the workspace, or pass a path as the first
    argument. You can re-run it at any time. It:
    - links `bin/*` into `~/.local/bin`, the hooks into `~/.claude/hooks` and the status line to
      `~/.claude/statusline.sh`
-   - adds whatever is missing to `~/.claude/settings.json` (backup in `settings.json.bak`)
+   - adds whatever is missing to `~/.claude/settings.json` (backup in `settings.json.bak`): hooks, status line, and
+     every folder in `plugins/` in `env.CLAUDE_CODE_PLUGIN_DIRS`, so each session loads them
    - installs and starts `claude-jobs.timer`
    - adds a line to `~/.bashrc` that loads `shell/bashrc.sh`
    - writes `<workspace>/cockpit.json` from the example if it doesn't exist
