@@ -478,7 +478,7 @@ def main():
                 ("setTabColor", TAB_COLOR))
     subprocess.Popen([Path(__file__).resolve().parent.parent / "hooks/sort-tabs.sh"], start_new_session=True,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)   # DASH tab moves to the front
-    sys.stdout.write("\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h")   # alternate screen, hide cursor, mouse clicks
+    sys.stdout.write("\x1b[?1049h\x1b[?25l\x1b[?7l\x1b[?1000h\x1b[?1006h")   # alternate screen, hide cursor, no line wrap (a wrapped line would shift the click targets below it), mouse clicks
     try:
         tty.setcbreak(fd)
         while True:
@@ -501,7 +501,7 @@ def main():
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
         konsole_tab(("setTabTitleFormat", "0", "%d : %n"), ("setTabTitleFormat", "1", "(%u) %H"))   # Konsole defaults
-        sys.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l")
+        sys.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?7h\x1b[?25h\x1b[?1049l")
         sys.stdout.flush()
 
 main()
