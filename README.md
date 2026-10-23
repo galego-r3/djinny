@@ -15,12 +15,13 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   colours its tab now; sessions run it when the user names a colour.
 - **Jobs** (`claude-jobs`): runs `<project>/jobs/<name>` scripts on their interval (systemd user timer).
 - **Archive**: a project whose `Status:` line starts with `archived` is hidden from the dashboard and its
-  jobs stop (`RULES.md` C1).
+  jobs stop (rules C1).
 - **Secrets** (`secret`): `secret set aligulac` stores an API key in the keyring (hidden prompt), `secret get`
   reads it. A shorter way to type `secret-tool store --label=… service …`.
 - **Updates**: every prompt pulls the cockpit in the background, so a change pushed from another machine
   arrives without doing anything; the next prompt says what came in.
-- **Rules** (`RULES.md`): the conventions the sessions follow. The workspace's `CLAUDE.md` loads them.
+- **Rules**: not in here. They're a separate repo in `<workspace>/rules/` ([claude-rules](https://github.com/stemiwe/claude-rules));
+  `install.sh` asks whether to use the shared ruleset or start your own, and the workspace's `CLAUDE.md` loads it.
 
 ## Layout
 
@@ -39,7 +40,6 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `shell/bashrc.sh` | sourced from `~/.bashrc`: dashboard-opened tabs start `claude`; `/exit` closes the tab |
 | `lib/env.sh` | shared shell helpers: workspace location, session names, colours |
 | `systemd/` | `claude-jobs.service` / `.timer` |
-| `RULES.md` | rules for the sessions, loaded by the workspace's `CLAUDE.md` |
 | `cockpit.example.json` | template for the workspace's `cockpit.json` |
 
 ## Install
@@ -58,7 +58,7 @@ installer links as `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) 
    - installs and starts `claude-jobs.timer`
    - adds a line to `~/.bashrc` that loads `shell/bashrc.sh`
    - writes `<workspace>/cockpit.json` from the example if it doesn't exist
-3. Add `@cockpit/RULES.md` to the workspace's root `CLAUDE.md`, plus your own rules.
+3. `install.sh` sets up the rules (shared or your own) and adds `@rules/RULES.md` to the workspace's root `CLAUDE.md`.
 4. Optional: in `cockpit.json`, set tab colours (`colors`) and folders to skip (`hidden`).
 5. Start `dashboard` in a Konsole tab and open projects by clicking them.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env -S python3 -I
-"""Runs the regular jobs of all workspace projects (RULES.md). Started every 5 min by the systemd user
+"""Runs the regular jobs of all workspace projects (rules C4). Started every 5 min by the systemd user
 timer claude-jobs.timer; symlinked to ~/.local/bin/claude-jobs by install.sh.
 
 A job is any executable file `<workspace>/<project>/jobs/<name>` with a line `# every: <n>m|h|d` in its
@@ -58,7 +58,7 @@ except (OSError, ValueError):
     HIDDEN = set()
 
 def archived(project_dir):
-    """True if the project's CLAUDE.md has a "Status: archived …" line (RULES.md C1): its jobs don't run."""
+    """True if the project's CLAUDE.md has a "Status: archived …" line (rules C1): its jobs don't run."""
     try:
         return any(l.lower().startswith("status: archived")
                    for l in (project_dir / "CLAUDE.md").read_text(errors="replace").splitlines()[:8])

@@ -4,7 +4,7 @@
 #   tab-color <colour> <project>        another project or a parent folder, path relative to the workspace
 #   tab-color none [<project>]          remove its entry (a parent folder's colour applies again, if any)
 # <colour>: #rrggbb or red, orange, yellow, green, teal, cyan, blue, purple, pink, white, grey.
-# Sessions run it when the user names a colour for them ("use red"); RULES.md C2.
+# Sessions run it when the user names a colour for them ("use red"); rules C2.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
 usage() { sed -n '3,5s/^# //p' "$0" >&2; exit 2; }

@@ -6,6 +6,7 @@
   },
   "hidden": [
     "cockpit",
+    "rules",
     "tmp"
   ],
   "aliases": {},

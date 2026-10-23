@@ -7,6 +7,9 @@
 # - installs and starts the systemd user timer claude-jobs.timer
 # - sources shell/bashrc.sh from ~/.bashrc
 # - remembers the workspace in ~/.config/claude-cockpit/workspace
+# - rules: if <workspace>/rules/ is missing, asks whether to use the shared ruleset (clone of $CLAUDE_RULES_REPO)
+#   or start your own (its cockpit.md plus an empty RULES.md, new git repo); answer ahead with
+#   CLAUDE_RULES=shared|own. Makes sure the workspace's CLAUDE.md loads @rules/RULES.md.
 set -euo pipefail
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 ws=$(cd "${1:-$here/..}" && pwd)
@@ -23,6 +26,32 @@ for cmd in jq python3 qdbus6; do command -v "$cmd" >/dev/null || echo "warning: 
 mkdir -p ~/.config/claude-cockpit ~/.local/bin ~/.claude/hooks ~/.config/systemd/user
 echo "$ws" > ~/.config/claude-cockpit/workspace
 [ -f "$ws/cockpit.json" ] || cp "$here/cockpit.example.json" "$ws/cockpit.json"
+
+rules_repo=${CLAUDE_RULES_REPO:-git@github.com:stemiwe/claude-rules.git}
+if [ ! -f "$ws/rules/RULES.md" ]; then
+  choice=${CLAUDE_RULES:-}
+  if [ -z "$choice" ] && [ -t 0 ]; then
+    echo "Rules for the sessions (<workspace>/rules/):"
+    echo "  1) use the shared ruleset ($rules_repo)"
+    echo "  2) create your own (starts from its cockpit conventions)"
+    read -rp "Choice [1/2]: " choice
+  fi
+  case "$choice" in
+    1|shared) git clone -q "$rules_repo" "$ws/rules" && echo "cloned the rules into $ws/rules" ;;
+    2|own)
+      src=$(mktemp -d)
+      git clone -q --depth 1 "$rules_repo" "$src"
+      mkdir -p "$ws/rules"; cp "$src/cockpit.md" "$ws/rules/"; rm -rf "$src"
+      printf '# Rules\n\nRules for every Claude session in this workspace.\n\n@cockpit.md\n' > "$ws/rules/RULES.md"
+      git -C "$ws/rules" init -q -b main && echo "created your own rules in $ws/rules (push them to a repo of yours)" ;;
+    *) echo "warning: no rules installed; re-run with CLAUDE_RULES=shared or own" >&2 ;;
+  esac
+fi
+if [ -f "$ws/rules/RULES.md" ] && ! grep -qxF "@rules/RULES.md" "$ws/CLAUDE.md" 2>/dev/null; then
+  if grep -qxF "@cockpit/RULES.md" "$ws/CLAUDE.md" 2>/dev/null; then sed -i 's#^@cockpit/RULES.md$#@rules/RULES.md#' "$ws/CLAUDE.md"
+  else printf '\n@rules/RULES.md\n' >> "$ws/CLAUDE.md"; fi
+  echo "$ws/CLAUDE.md now loads @rules/RULES.md"
+fi
 
 for f in "$here"/bin/*; do ln -sfn "$f" ~/.local/bin/"$(basename "$f")"; done
 for f in session-name.sh session-state.sh sort-tabs.sh cockpit-pull.sh; do ln -sfn "$here/hooks/$f" ~/.claude/hooks/$f; done
