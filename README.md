@@ -25,7 +25,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `bin/claude-jobs` | job runner |
 | `bin/secret` | short form of `secret-tool`: `secret set/get/del <service> [attr value]…` |
 | `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting |
-| `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) |
+| `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) and saves open questions apart from the session in `<workspace>/.cockpit/questions/` (versioned, so they move between machines) |
 | `hooks/sort-tabs.sh` | sorts the Konsole tabs of the current window |
 | `hooks/statusline.sh` | Claude Code status line |
 | `plugins/worklog/` | Claude Code mod: side pane with the project's status, the open `Your turn:` questions and a work log; `/worklog` reopens it |
@@ -37,7 +37,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 
 ## Install
 
-Needs Linux, KDE Konsole (D-Bus via `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) and
+Needs Linux, KDE Konsole (D-Bus via `qdbus6`; Fedora: package `qt6-qttools`, whose `qdbus-qt6` the
+installer links as `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) and
 `secret-tool` (`libsecret-tools`).
 
 1. Clone this repo into your workspace as `cockpit/`, e.g. `git clone … ~/claude/cockpit`.

@@ -16,10 +16,12 @@ One row per project: colour, live state, status line, tokens used in the current
 - Colours = "colors" in the workspace's cockpit.json.
 - Tokens = input + cache writes + output from the transcripts in ~/.claude/projects (cache reads excluded).
 - Click a project name: switches to its Konsole tab, or opens a new tab there running `claude` (`claude
-  --resume <id>` when the row only has an orphaned question).
-- Questions survive restarts: when a session waiting with a question ends or its process dies, its state file
-  stays and the row keeps its ❓ until the session is resumed or the question dismissed.
-- Dismiss: rows waiting with a question get a number; pressing it marks those sessions idle (no tokens used).
+  --resume <id>` when the row has a saved question whose session isn't running and is on this machine).
+- Questions are saved apart from the sessions, in <workspace>/.cockpit/questions/ (versioned with the
+  workspace): the row keeps its ❓ across restarts and machines until the user writes in that project again
+  or dismisses it.
+- Dismiss: rows waiting with a question get a number; pressing it deletes their saved questions and marks
+  sessions waiting at a dialog idle (no tokens used).
 `dashboard --once` prints a single frame and exits.
 """
 import calendar, datetime, json, os, re, select, shutil, signal, subprocess, sys, termios, time, tty
@@ -171,34 +173,50 @@ def alive(pid):
     try: return (Path(f"/proc/{pid}/comm")).read_text().strip() == "claude"   # not a reused PID after a reboot
     except OSError: return False
 
-ORPHANS = {}   # row -> session id of an open question whose Claude process is gone, refreshed every frame
+QDIR = ROOT / ".cockpit/questions"   # saved questions, one file per session (hooks/session-state.sh)
+ORPHANS = {}   # row -> session id of a saved question whose session isn't running, refreshed every frame
 def live_states(row_paths):
-    live, files = {}, {}   # row -> set of states, row -> question state files
+    """Row -> set of live states, and row -> dismiss actions: saved question files plus live state files
+    waiting at a permission/question dialog."""
+    live, files = {}, {}
     ORPHANS.clear()
     running = set()        # rows with a running session
     for f in (HOME / ".cache/claude/sessions").glob("*.json"):
         try:
             st = json.loads(f.read_text())
-            state = {"input": "question"}.get(st["state"], st["state"])
-            gone = not alive(st["pid"])
-            if gone and state != "question":
+            if not alive(st["pid"]):
                 f.unlink(); continue                 # that Claude process is gone
             row = row_for(st["cwd"], row_paths)
             if not row: continue
-            if gone: ORPHANS.setdefault(row, f.stem)
-            else: running.add(row)
+            running.add(row)
+            state = {"input": "question"}.get(st["state"], st["state"])
             live.setdefault(row, set()).add(state)
             if state == "question": files.setdefault(row, []).append(f)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    for f in sorted(QDIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True):
+        try:
+            q = json.loads(f.read_text())
+            row = row_for(str(ROOT if q["project"] == "." else ROOT / q["project"]), row_paths)
+            if not row: continue
+            live.setdefault(row, set()).add("question")
+            files.setdefault(row, []).append(f)
+            if transcript(q.get("session", "")): ORPHANS.setdefault(row, q["session"])
         except (OSError, ValueError, KeyError, TypeError):
             continue
     for row in running: ORPHANS.pop(row, None)
     return live, files
 
-DISMISS = {}   # key -> question state files of that row, refreshed every frame
+def transcript(sid):
+    """True when this machine has the session's transcript, so `claude --resume` can open it."""
+    return bool(sid) and any((HOME / ".claude/projects").glob(f"*/{sid}.jsonl"))
+
+DISMISS = {}   # key -> question files of that row, refreshed every frame
 CLICK = {}     # screen line (0-based) -> project row, refreshed every frame
 def dismiss(key):
     for f in DISMISS.get(key, []):
         try:
+            if f.parent == QDIR: f.unlink(); continue
             st = json.loads(f.read_text())
             if st.get("state") in ("question", "input"):
                 st["state"] = "idle"
@@ -406,7 +424,7 @@ def qdbus(*args):
 
 def goto_project(rel):
     """Switch to the project's tab (title set by session-name.sh) or open one running claude, resuming
-    the session of an orphaned question."""
+    the session of a saved question."""
     win = os.environ.get("KONSOLE_DBUS_WINDOW")
     if not (win and os.environ.get("KONSOLE_DBUS_SERVICE")): return
     for sid in (qdbus(win, "sessionList") or "").split():

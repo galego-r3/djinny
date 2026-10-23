@@ -5,19 +5,24 @@
 #   question   — waiting for the user: permission/question dialog, or the turn ended with a question
 #   idle       — turn ended without a question (dashboard shows nothing)
 #   monitoring — turn ended but a wakeup/monitor/cron/background task is pending
-# The dashboard drops files whose Claude process ($pid) is gone, except open questions: those stay
-# (orphaned) until answered in a resumed session or dismissed, so a restart doesn't lose them.
+# The dashboard drops files whose Claude process ($pid) is gone.
+# A turn that ends with a question is also saved, independent of the session, in
+# <workspace>/.cockpit/questions/<session_id>.json ({project, text, asked, session, host}; project = path
+# relative to the workspace, "." for the root). It's versioned with the workspace, so it survives restarts and
+# moves to other machines, and stays until the user writes in that project (any session there that isn't
+# running elsewhere) or dismisses it on the dashboard.
+. "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
 dir="$HOME/.cache/claude/sessions"
+qdir="$ws/.cockpit/questions"
 mkdir -p "$dir"
 in=$(cat)
 sid=$(jq -r '.session_id // empty' <<<"$in"); [ -z "$sid" ] && exit 0
 event=$(jq -r '.hook_event_name // empty' <<<"$in")
 f="$dir/$sid.json"
+cwd=$(jq -r '.cwd // empty' <<<"$in")
+case "$cwd" in "$ws") rel=. ;; "$ws"/*) rel=${cwd#"$ws"/} ;; *) rel= ;; esac
 
-if [ "$event" = SessionEnd ]; then
-  [ "$(jq -r '.state // empty' "$f" 2>/dev/null)" = question ] || rm -f "$f"
-  exit 0
-fi
+if [ "$event" = SessionEnd ]; then rm -f "$f"; exit 0; fi
 
 # PID of the claude process that runs this hook (first "claude" ancestor)
 pid=$PPID
@@ -28,7 +33,21 @@ done
 
 watch=$(jq -r '.watch // false' "$f" 2>/dev/null || echo false)
 case "$event" in
-  UserPromptSubmit) state=busy; watch=false ;;   # a scheduled wakeup that fires also lands here
+  UserPromptSubmit)
+    state=busy; watch=false   # a scheduled wakeup that fires also lands here
+    # The user is at this project again: its saved questions are answered, except those of other
+    # sessions still running on this machine
+    if [ -n "$rel" ] && [ -d "$qdir" ]; then
+      for q in "$qdir"/*.json; do
+        [ -f "$q" ] && [ "$(jq -r '.project // empty' "$q" 2>/dev/null)" = "$rel" ] || continue
+        qs=$(basename "$q" .json)
+        if [ "$qs" != "$sid" ]; then
+          qp=$(jq -r '.pid // 0' "$dir/$qs.json" 2>/dev/null)
+          [ "$(cat "/proc/${qp:-0}/comm" 2>/dev/null)" = claude ] && continue
+        fi
+        rm -f "$q"
+      done
+    fi ;;
   PostToolUse)
     state=busy
     tool=$(jq -r '.tool_name // empty' <<<"$in")
@@ -51,11 +70,17 @@ case "$event" in
         '[.[] | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text] | last // ""')
       if [ "${#msg}" -gt 300 ]; then msg=${msg: -300}; fi
       case "$msg" in *\?*|*"Your turn:"*) state=question ;; *) state=idle ;; esac
+      if [ "$state" = question ] && [ -n "$rel" ]; then
+        mkdir -p "$qdir"
+        jq -nc --arg project "$rel" --arg text "$msg" --argjson asked "$(date +%s)" --arg session "$sid" \
+          --arg host "$(hostname)" '{project:$project, text:$text, asked:$asked, session:$session, host:$host}' \
+          > "$qdir/.$sid.tmp" && mv "$qdir/.$sid.tmp" "$qdir/$sid.json"
+      fi
     fi ;;
   *) exit 0 ;;
 esac
 
-jq -nc --arg state "$state" --argjson watch "$watch" --arg cwd "$(jq -r '.cwd // empty' <<<"$in")" \
+jq -nc --arg state "$state" --argjson watch "$watch" --arg cwd "$cwd" \
   --argjson pid "${pid:-0}" --argjson ts "$(date +%s)" \
   '{state:$state, watch:$watch, cwd:$cwd, pid:$pid, ts:$ts}' > "$f.tmp" && mv "$f.tmp" "$f"
 exit 0

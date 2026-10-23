@@ -10,6 +10,14 @@
 set -euo pipefail
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 ws=$(cd "${1:-$here/..}" && pwd)
+mkdir -p ~/.local/bin
+# the cockpit calls qdbus6 (Debian/Ubuntu name); other distros name it differently, e.g. Fedora qdbus-qt6
+if ! command -v qdbus6 >/dev/null; then
+  for q in qdbus-qt6 /usr/lib64/qt6/bin/qdbus /usr/lib/qt6/bin/qdbus; do
+    q=$(command -v "$q" || true)
+    [ -n "$q" ] && { ln -sfn "$q" ~/.local/bin/qdbus6; echo "linked ~/.local/bin/qdbus6 -> $q"; break; }
+  done
+fi
 for cmd in jq python3 qdbus6; do command -v "$cmd" >/dev/null || echo "warning: $cmd not found (needed by the cockpit)" >&2; done
 
 mkdir -p ~/.config/claude-cockpit ~/.local/bin ~/.claude/hooks ~/.config/systemd/user
