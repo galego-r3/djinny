@@ -37,3 +37,7 @@ installed for (here: the parent of this file's folder).
 - **C5. The cockpit itself** lives in `<workspace>/cockpit/` (its own git repo, generic: nothing about one
   person or workspace in it). It is changed from the workspace's root session; project sessions that need a
   change tell the user to do it there. Workspace-specific settings go in `<workspace>/cockpit.json`.
+- **C7. Sessions talk to each other directly.** Never make the user relay messages between sessions. A session
+  that needs another project's session uses `ListAgents` / `SendMessage` (the receiving session's name is
+  shown there) and asks it itself; the receiver answers the same way. Only ask the user for a decision or
+  for what only they can do (a login, a payment, a secret, a confirmation the session must not click itself).
