@@ -87,18 +87,7 @@ done
 cost=$(j '.cost.total_cost_usd')
 [[ -n $cost ]] && parts+=("${YELLOW}~\$$(LC_NUMERIC=C printf '%.2f' "$cost")${RESET} ${DIM}est.${RESET}")
 
-# Other sessions waiting for the user (live state from hooks/session-state.sh), by project name
 . "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
-me=$(j '.session_id')
-waiting=()
-for f in ~/.cache/claude/sessions/*.json; do
-  [[ -f $f && $(basename "$f" .json) != "$me" ]] || continue
-  read -r st qpid qcwd < <(jq -r '[.state, .pid, .cwd] | @tsv' "$f" 2>/dev/null) || continue
-  [[ $st == question && $(cat "/proc/$qpid/comm" 2>/dev/null) == claude ]] || continue
-  n=$(ws_rel "$qcwd"); n=${n:-$(basename "$qcwd")}
-  [[ " ${waiting[*]} " == *" $n "* ]] || waiting+=("$n")
-done
-(( ${#waiting[@]} )) && parts+=("${RED}❓ ${waiting[*]}${RESET}")
 
 out=""
 for p in "${parts[@]}"; do

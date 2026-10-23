@@ -9,7 +9,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 - **Tabs**: each session is named after its folder (at most two levels deep, like the dashboard rows) and gets its tab title and colour automatically. Tabs
   are kept sorted: DASH, the root, projects A–Z, unnamed tabs last. Leaving `claude` closes its tab.
 - **Status line**: model, context use, rate limits (▲ = used faster than the window passes), estimated
-  cost, other projects waiting with a question (❓), plus a big two-line logo of the project name in its tab
+  cost, plus a big two-line logo of the project name in its tab
   colour.
 - **Tab colours** (`tab-color`): `tab-color red` saves the current project's colour in `cockpit.json` and
   colours its tab now; sessions run it when the user names a colour.
