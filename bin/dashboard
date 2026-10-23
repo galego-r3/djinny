@@ -383,8 +383,8 @@ def todo_frame(head, W, H, colors):
     for line, payload in shown:
         if payload: TICK[len(out)] = payload
         out.append(line)
-    more = f" · {SCROLL[0] + 1}–{SCROLL[0] + len(shown)} of {len(body)} lines" if len(body) > room else ""
-    out.append(f"{DIM}q to quit · Tab switches tabs · click ☐ to tick an item · ↑/↓/wheel scroll{more}{RST}")
+    more = f"lines {SCROLL[0] + 1}–{SCROLL[0] + len(shown)} of {len(body)}, ↑/↓/wheel scroll · " if len(body) > room else ""
+    out.append(f"{DIM}{more}q to quit · Tab switches tabs · click ☐ to tick an item{RST}")
     return out
 
 def usage_lines(path):
@@ -424,8 +424,8 @@ def commands_frame(head, W, H):
     room = max(1, H - len(head) - 2)
     SCROLL[0] = max(0, min(SCROLL[0], len(body) - room))
     shown = body[SCROLL[0]:SCROLL[0] + room]
-    more = f" · {SCROLL[0] + 1}–{SCROLL[0] + len(shown)} of {len(body)} lines" if len(body) > room else ""
-    return head + [""] + shown + [f"{DIM}q to quit · Tab switches tabs · ↑/↓/wheel scroll{more}{RST}"]
+    more = f"lines {SCROLL[0] + 1}–{SCROLL[0] + len(shown)} of {len(body)}, ↑/↓/wheel scroll · " if len(body) > room else ""
+    return head + [""] + shown + [f"{DIM}{more}q to quit · Tab switches tabs{RST}"]
 
 def frame():
     now = time.time()
@@ -494,11 +494,11 @@ def frame():
     for i, line in enumerate(body[SCROLL[0]:SCROLL[0] + room]):
         if SCROLL[0] + i in at: CLICK[len(out)] = at[SCROLL[0] + i]
         out.append(line)
-    more = f" · rows {SCROLL[0] // 2 + 1}–{(SCROLL[0] + room) // 2} of {len(rows)}, ↑/↓/wheel scroll" if len(body) > room else ""
+    more = f"rows {SCROLL[0] // 2 + 1}–{min(len(rows), (SCROLL[0] + room) // 2)} of {len(rows)}, ↑/↓/wheel scroll · " if len(body) > room else ""
     nums = " ".join(f"{human(n):>{NUMW}}" for n in tot)
     out.append(f"   {BOLD}{'total':<{namew}}{RST}  {'':<{STATEW}}"
                f"{DIM}{cut('tokens = input + cache writes + output', statw):<{statw}}{RST}  {' ' * actcol}{BOLD}{nums}{RST}")
-    out.append(f"{DIM}q to quit · Tab switches tabs · click a name to go to its tab · 1-9 dismisses that ❓ · refreshes every {REFRESH}s{more}{RST}")
+    out.append(f"{DIM}{more}q to quit · Tab switches tabs · click a name to go to its tab · 1-9 dismisses that ❓ · refreshes every {REFRESH}s{RST}")
     return out
 
 # --- main loop ---------------------------------------------------------------------------------
