@@ -18,6 +18,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   jobs stop (`RULES.md` C1).
 - **Secrets** (`secret`): `secret set aligulac` stores an API key in the keyring (hidden prompt), `secret get`
   reads it. A shorter way to type `secret-tool store --label=… service …`.
+- **Updates**: every prompt pulls the cockpit in the background, so a change pushed from another machine
+  arrives without doing anything; the next prompt says what came in.
 - **Rules** (`RULES.md`): the conventions the sessions follow. The workspace's `CLAUDE.md` loads them.
 
 ## Layout
@@ -30,6 +32,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `bin/secret` | short form of `secret-tool`: `secret set/get/del <service> [attr value]…` |
 | `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting |
 | `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) and saves open questions apart from the session in `<workspace>/.cockpit/questions/` (versioned, so they move between machines) |
+| `hooks/cockpit-pull.sh` | UserPromptSubmit hook: pulls the cockpit in the background (at most once a minute, fast-forward only, never over local changes), re-runs `install.sh` when the pull touched it, `systemd/` or `plugins/`, reports the update on the next prompt; log `~/.cache/claude/cockpit-pull.log` |
 | `hooks/sort-tabs.sh` | sorts the Konsole tabs of the current window |
 | `hooks/statusline.sh` | Claude Code status line |
 | `plugins/worklog/` | Claude Code mod: side pane with the project's status, the open `Your turn:` questions and a work log; `/worklog` reopens it |

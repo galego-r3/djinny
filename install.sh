@@ -25,7 +25,7 @@ echo "$ws" > ~/.config/claude-cockpit/workspace
 [ -f "$ws/cockpit.json" ] || cp "$here/cockpit.example.json" "$ws/cockpit.json"
 
 for f in "$here"/bin/*; do ln -sfn "$f" ~/.local/bin/"$(basename "$f")"; done
-for f in session-name.sh session-state.sh sort-tabs.sh; do ln -sfn "$here/hooks/$f" ~/.claude/hooks/$f; done
+for f in session-name.sh session-state.sh sort-tabs.sh cockpit-pull.sh; do ln -sfn "$here/hooks/$f" ~/.claude/hooks/$f; done
 ln -sfn "$here/hooks/statusline.sh" ~/.claude/statusline.sh
 
 # settings.json: one hook entry per event, added only if no entry runs that command yet
@@ -39,6 +39,7 @@ jq --argjson plugins "$plugins" '
   add("SessionStart"; "~/.claude/hooks/session-name.sh")
   | reduce ("UserPromptSubmit", "PostToolUse", "Notification", "Stop", "SessionEnd") as $ev
       (.; add($ev; "~/.claude/hooks/session-state.sh"))
+  | add("UserPromptSubmit"; "~/.claude/hooks/cockpit-pull.sh")
   | .statusLine //= {type: "command", command: "~/.claude/statusline.sh", refreshInterval: 30}
   | .env.CLAUDE_CODE_PLUGIN_DIRS = ((.env.CLAUDE_CODE_PLUGIN_DIRS // "" | split(":") | map(select(. != ""))) as $have
       | $have + ($plugins - $have) | join(":"))
