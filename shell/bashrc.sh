@@ -17,3 +17,9 @@ if [[ $- == *i* && -f $_m && $(head -n1 "$_m") == "$PWD" && $(( $(date +%s) - $(
   if [[ -n $_r ]]; then claude --resume "$_r"; else claude; fi
 fi
 unset _m _r
+# A tab opened by session-name.sh (no dashboard in the window yet) runs the dashboard
+_m="$HOME/.cache/claude/dashstart"
+if [[ $- == *i* && -f $_m && $(head -n1 "$_m") == "$PWD" && $(( $(date +%s) - $(stat -c %Y "$_m") )) -lt 15 ]]; then
+  : > "$_m"; dashboard
+fi
+unset _m

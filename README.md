@@ -5,7 +5,9 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 - **Dashboard** (`dashboard`): a full-screen TUI with one row per project. Each row shows the tab colour,
   the live state (busy / question / monitoring), the project's `Status:` line, the last tool call of a running
   session ("bash: git push", "edit: lib.php") and tokens used (5h / 7d / all time). Click a project to switch to its tab, or to open a new tab that starts `claude`. Press 1–9 to
-  dismiss a question row (marks it idle, no tokens used). `q` quits.
+  dismiss a question row (marks it idle, no tokens used). `q` quits. Starting `claude` in a Konsole window
+  without a dashboard opens one in a new tab (DASH) next to it; `"dashboard_autostart": false` in
+  `cockpit.json` turns that off.
 - **Tabs**: each session is named after its folder (at most two levels deep, like the dashboard rows) and gets its tab title and colour automatically. Tabs
   are kept sorted: DASH, the root, projects A–Z, unnamed tabs last. Leaving `claude` closes its tab.
 - **Status line**: model, context use, rate limits (▲ = used faster than the window passes), estimated
@@ -34,13 +36,13 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `bin/claude-jobs` | job runner |
 | `bin/tab-color` | set a project's tab colour in `cockpit.json` and apply it to the tab |
 | `bin/secret` | short form of `secret-tool`: `secret set/get/del <service> [attr value]…`, `push`/`pull` to 1Password |
-| `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting |
+| `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting, opens the dashboard tab if the window has none |
 | `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) and saves open questions apart from the session in `<workspace>/.cockpit/questions/` (versioned, so they move between machines) |
 | `hooks/cockpit-pull.sh` | UserPromptSubmit hook: pulls the cockpit in the background (at most once a minute, fast-forward only, never over local changes), re-runs `install.sh` when the pull touched it, `systemd/` or `plugins/`, reports the update on the next prompt; log `~/.cache/claude/cockpit-pull.log` |
 | `hooks/sort-tabs.sh` | sorts the Konsole tabs of the current window |
 | `hooks/statusline.sh` | Claude Code status line |
 | `plugins/worklog/` | Claude Code mod: side pane with the project's status, the open `Your turn:` questions and a work log; `/worklog` reopens it |
-| `shell/bashrc.sh` | sourced from `~/.bashrc`: dashboard-opened tabs start `claude`; `/exit` closes the tab |
+| `shell/bashrc.sh` | sourced from `~/.bashrc`: dashboard-opened tabs start `claude`, the hook's DASH tab starts `dashboard`; `/exit` closes the tab |
 | `lib/env.sh` | shared shell helpers: workspace location, session names, colours |
 | `lib/konsole-color` | colours a Konsole tab: `setTabColor`, or on Konsole 26.08+ (no `setTabColor`) a generated profile `cockpit-RRGGBB` per colour in `~/.local/share/konsole/` (new colours show after a Konsole restart) |
 | `systemd/` | `claude-jobs.service` / `.timer` |
@@ -64,7 +66,7 @@ installer links as `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) 
    - writes `<workspace>/cockpit.json` from the example if it doesn't exist
 3. `install.sh` sets up the rules (shared or your own) and adds `@rules/RULES.md` to the workspace's root `CLAUDE.md`.
 4. Optional: in `cockpit.json`, set tab colours (`colors`) and folders to skip (`hidden`).
-5. Start `dashboard` in a Konsole tab and open projects by clicking them.
+5. Start `claude` (or `dashboard`) in a Konsole tab; the dashboard opens with it. Open projects by clicking them.
 
 ## Workspace config: `<workspace>/cockpit.json`
 
