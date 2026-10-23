@@ -484,7 +484,7 @@ def frame():
             if len(DISMISS) < 9:
                 key = str(len(DISMISS) + 1)
                 DISMISS[key] = qfiles.get(rel, [])
-                label, width = f"{key} ❓", 4
+                label, width = f"❓ key {key}", 8      # the dismiss key, not a count
         u = usage.get(rel, [0, 0, 0])
         tot = [a + b for a, b in zip(tot, u)]
         nums = " ".join(f"{heat(n, i)}{human(n):>{NUMW}}{RST}" for i, n in enumerate(u))

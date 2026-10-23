@@ -20,7 +20,6 @@ sid=$(jq -r '.session_id // empty' <<<"$in"); [ -z "$sid" ] && exit 0
 event=$(jq -r '.hook_event_name // empty' <<<"$in")
 f="$dir/$sid.json"
 cwd=$(jq -r '.cwd // empty' <<<"$in")
-case "$cwd" in "$ws") rel=. ;; "$ws"/*) rel=${cwd#"$ws"/} ;; *) rel= ;; esac
 
 if [ "$event" = SessionEnd ]; then rm -f "$f"; exit 0; fi
 
@@ -30,6 +29,10 @@ for _ in 1 2 3 4 5; do
   [ "$(ps -o comm= -p "$pid" 2>/dev/null)" = claude ] && break
   pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' '); [ -z "$pid" ] && break
 done
+
+# The project is where the session was started (Claude Code's registry), not where it has cd'ed to since
+start=$(jq -r '.cwd // empty' "$HOME/.claude/sessions/$pid.json" 2>/dev/null); [ -n "$start" ] || start=$cwd
+case "$start" in "$ws") rel=. ;; "$ws"/*) rel=${start#"$ws"/} ;; *) rel= ;; esac
 
 watch=$(jq -r '.watch // false' "$f" 2>/dev/null || echo false)
 case "$event" in
@@ -47,9 +50,10 @@ case "$event" in
         fi
         rm -f "$q"
       done
-    fi ;;
+    fi
+    rm -f "$qdir/$sid.json" ;;
   PostToolUse)
-    state=busy
+    state=busy; rm -f "$qdir/$sid.json"   # working again (e.g. on a message from another session)
     tool=$(jq -r '.tool_name // empty' <<<"$in")
     case "$tool" in
       ScheduleWakeup|Monitor|CronCreate) watch=true ;;
@@ -69,7 +73,7 @@ case "$event" in
       [ -z "$msg" ] && [ -f "$tp" ] && msg=$(tail -n 200 "$tp" | jq -rs \
         '[.[] | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text] | last // ""')
       if [ "${#msg}" -gt 300 ]; then msg=${msg: -300}; fi
-      case "$msg" in *\?*|*"Your turn:"*) state=question ;; *) state=idle ;; esac
+      case "$msg" in *\?*|*"Your turn:"*) state=question ;; *) state=idle; rm -f "$qdir/$sid.json" ;; esac
       if [ "$state" = question ] && [ -n "$rel" ]; then
         mkdir -p "$qdir"
         jq -nc --arg project "$rel" --arg text "$msg" --argjson asked "$(date +%s)" --arg session "$sid" \
