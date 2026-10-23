@@ -46,7 +46,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) and saves open questions apart from the session in `<workspace>/.cockpit/questions/` (versioned, so they move between machines) |
 | `hooks/cockpit-pull.sh` | UserPromptSubmit hook: pulls the cockpit in the background (at most once a minute, fast-forward only, never over local changes), re-runs `install.sh` when the pull touched it, `systemd/` or `plugins/`, reports the update on the next prompt; log `~/.cache/claude/cockpit-pull.log` |
 | `hooks/repo-pull.sh` | UserPromptSubmit hook: pulls the session's repo before Claude answers (see above); log `~/.cache/claude/repo-pull.log` |
-| `lib/presence` | `push` / `fetch` / `show` this and the other machines' running sessions (branches `cockpit-presence/<host>`, one parentless commit each, force-pushed) |
+| `lib/presence` | `push` / `fetch` / `show` / `usage`: this and the other machines' running sessions and token counts (branches `cockpit-presence/<host>`, one parentless commit each, force-pushed) |
 | `hooks/sort-tabs.sh` | sorts the Konsole tabs of the current window |
 | `hooks/statusline.sh` | Claude Code status line |
 | `plugins/worklog/` | Claude Code mod: side pane with the project's status, the open `Your turn:` questions and a work log; `/worklog` reopens it |

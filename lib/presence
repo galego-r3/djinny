@@ -8,6 +8,8 @@
 #                    claude-jobs; calls in quick succession are merged into one push after a 20 s wait
 #                    (`push --now`: no wait, for claude-jobs, whose service would kill a waiting child).
 #   presence fetch   fetch the other machines' branches (the dashboard, every minute)
+#   presence usage   print {"<host>": <its usage.json>} of the other machines, however old: the token counts
+#                    their dashboards saved (~/.cache/claude/usage.json), sent along with each push
 #   presence show    print {"<host>": {"ts": …, "sessions": [{"project", "state"}]}} of the other machines,
 #                    leaving out machines that haven't pushed for 15 min
 . "$(dirname "$(readlink -f "$0")")/env.sh"
@@ -30,7 +32,7 @@ sessions() {   # this machine's running sessions as a JSON array, sorted
 }
 
 push_once() {
-  local now list last blob tree commit
+  local now list last blob ublob tree commit
   now=$(date +%s); list=$(sessions)
   last=$(cat "$cache/presence.last" 2>/dev/null)
   if [ "$list" = "${last#* }" ]; then                                   # unchanged: heartbeat only
@@ -38,7 +40,9 @@ push_once() {
   fi
   blob=$(jq -nc --arg h "$host" --argjson ts "$now" --argjson s "$list" '{host: $h, ts: $ts, sessions: $s}' \
          | git -C "$ws" hash-object -w --stdin) || return 1
-  tree=$(printf '100644 blob %s\tpresence.json\n' "$blob" | git -C "$ws" mktree) || return 1
+  ublob=$(git -C "$ws" hash-object -w "$cache/usage.json" 2>/dev/null)
+  tree=$({ printf '100644 blob %s\tpresence.json\n' "$blob"
+           [ -n "$ublob" ] && printf '100644 blob %s\tusage.json\n' "$ublob"; } | git -C "$ws" mktree) || return 1
   commit=$(GIT_AUTHOR_NAME=cockpit GIT_AUTHOR_EMAIL=cockpit@localhost GIT_COMMITTER_NAME=cockpit \
            GIT_COMMITTER_EMAIL=cockpit@localhost git -C "$ws" commit-tree "$tree" -m "presence $host") || return 1
   timeout 30 git -C "$ws" push -q -f origin "$commit:refs/heads/cockpit-presence/$host" 2>/dev/null || return 1
@@ -62,5 +66,11 @@ case "$1" in
       git -C "$ws" cat-file -p "$ref:presence.json" 2>/dev/null
     done | jq -sc --argjson now "$(date +%s)" \
       'map(select(.ts > $now - 900 and (.sessions | length) > 0) | {key: .host, value: {ts, sessions}}) | from_entries' ;;
-  *) sed -n '2,12p' "$0" | sed 's/^# \?//'; exit 1 ;;
+  usage)
+    git -C "$ws" for-each-ref --format='%(refname)' "$refs/" | while read -r ref; do
+      [ "${ref##*/}" = "$host" ] && continue
+      u=$(git -C "$ws" cat-file -p "$ref:usage.json" 2>/dev/null) || continue
+      jq -c --arg h "${ref##*/}" '{key: $h, value: .}' <<<"$u"
+    done | jq -sc 'from_entries' ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \?//'; exit 1 ;;
 esac
