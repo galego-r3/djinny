@@ -56,6 +56,7 @@ fi
 for f in "$here"/bin/*; do ln -sfn "$f" ~/.local/bin/"$(basename "$f")"; done
 for f in session-name.sh session-state.sh sort-tabs.sh cockpit-pull.sh; do ln -sfn "$here/hooks/$f" ~/.claude/hooks/$f; done
 ln -sfn "$here/hooks/statusline.sh" ~/.claude/statusline.sh
+"$here/lib/konsole-color" --profiles '#FF0096'   # tab colour profiles (Konsole without setTabColor); #FF0096 = dashboard
 
 # settings.json: one hook entry per event, added only if no entry runs that command yet
 settings=~/.claude/settings.json

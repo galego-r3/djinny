@@ -42,6 +42,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `plugins/worklog/` | Claude Code mod: side pane with the project's status, the open `Your turn:` questions and a work log; `/worklog` reopens it |
 | `shell/bashrc.sh` | sourced from `~/.bashrc`: dashboard-opened tabs start `claude`; `/exit` closes the tab |
 | `lib/env.sh` | shared shell helpers: workspace location, session names, colours |
+| `lib/konsole-color` | colours a Konsole tab: `setTabColor`, or on Konsole 26.08+ (no `setTabColor`) a generated profile `cockpit-RRGGBB` per colour in `~/.local/share/konsole/` (new colours show after a Konsole restart) |
 | `systemd/` | `claude-jobs.service` / `.timer` |
 | `cockpit.example.json` | template for the workspace's `cockpit.json` |
 

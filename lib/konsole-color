@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Colours the calling Konsole tab ($KONSOLE_DBUS_SERVICE / $KONSOLE_DBUS_SESSION).
+#   konsole-color '#RRGGBB'     this tab
+#   konsole-color --profiles    only write the colour profiles for every colour in cockpit.json (install.sh)
+# Konsole up to 26.04 has Session.setTabColor. Newer ones (26.08) dropped it: there the tab switches to a
+# generated profile "cockpit-RRGGBB" (parent: the default profile, plus TabColor). A running Konsole only
+# finds profiles that existed when it started, so a colour that's new since then shows after a Konsole
+# restart (exit 1 until then).
+. "$(dirname "$(readlink -f "$0")")/env.sh"
+pdir=${XDG_DATA_HOME:-$HOME/.local/share}/konsole
+
+profile() {   # writes the profile for colour $1, prints its name
+  local hex=${1#\#} parent
+  hex=${hex^^}
+  parent=$(sed -n 's/^DefaultProfile=//p' "${XDG_CONFIG_HOME:-$HOME/.config}/konsolerc" 2>/dev/null)
+  if [ -n "$parent" ] && [ -f "$pdir/$parent" ]; then parent="$pdir/$parent"; else parent=FALLBACK/; fi
+  mkdir -p "$pdir"
+  printf '[General]\nName=cockpit-%s\nParent=%s\nTabColor=%d,%d,%d\n' "$hex" "$parent" \
+    "0x${hex:0:2}" "0x${hex:2:2}" "0x${hex:4:2}" > "$pdir/cockpit-$hex.profile.tmp"
+  cmp -s "$pdir/cockpit-$hex.profile.tmp" "$pdir/cockpit-$hex.profile" && rm "$pdir/cockpit-$hex.profile.tmp" \
+    || mv "$pdir/cockpit-$hex.profile.tmp" "$pdir/cockpit-$hex.profile"
+  echo "cockpit-$hex"
+}
+
+if [ "$1" = --profiles ]; then
+  for c in $(jq -r '.colors[]?' "$conf" 2>/dev/null) "$@"; do [[ $c == \#* ]] && profile "$c" >/dev/null; done
+  exit 0
+fi
+
+[[ $1 =~ ^#[0-9a-fA-F]{6}$ ]] || { echo "usage: konsole-color '#RRGGBB'" >&2; exit 2; }
+[ -n "$KONSOLE_DBUS_SERVICE" ] && [ -n "$KONSOLE_DBUS_SESSION" ] || exit 0
+q() { qdbus6 "$KONSOLE_DBUS_SERVICE" "$KONSOLE_DBUS_SESSION" "$@" 2>/dev/null; }
+q setTabColor "$1" >/dev/null && exit 0
+name=$(profile "$1")
+q setProfile "$name" >/dev/null
+[ "$(q profile)" = "$name" ]

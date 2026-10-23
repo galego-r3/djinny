@@ -40,7 +40,9 @@ mv "$tmp" "$conf"
 
 # Apply it to the calling tab now when that tab belongs to this project (the dashboard shows it at once anyway)
 now=$(ws_color "$name" || true)
+lib=$(dirname "$(readlink -f "$0")")/../lib
+"$lib/konsole-color" --profiles   # Konsole without setTabColor: profile ready for its next start
 if [ $# -lt 2 ] && [ -n "${KONSOLE_DBUS_SERVICE:-}" ] && [ -n "${KONSOLE_DBUS_SESSION:-}" ] && [ -n "$now" ]; then
-  qdbus6 "$KONSOLE_DBUS_SERVICE" "$KONSOLE_DBUS_SESSION" setTabColor "$now" >/dev/null 2>&1 || true
+  "$lib/konsole-color" "$now" || echo "(this Konsole shows the new colour after a restart)"
 fi
 echo "$name: ${hex:-no own colour}${now:+ (tab colour now $now)}"

@@ -14,7 +14,7 @@ if [ -n "$KONSOLE_DBUS_SERVICE" ] && [ -n "$KONSOLE_DBUS_SESSION" ]; then
   for ctx in 0 1; do
     qdbus6 "$KONSOLE_DBUS_SERVICE" "$KONSOLE_DBUS_SESSION" setTabTitleFormat "$ctx" "${name//%/%%}" >/dev/null 2>&1
   done
-  [ -n "$color" ] && qdbus6 "$KONSOLE_DBUS_SERVICE" "$KONSOLE_DBUS_SESSION" setTabColor "$color" >/dev/null 2>&1
+  [ -n "$color" ] && "$(dirname "$(readlink -f "$0")")/../lib/konsole-color" "$color" >/dev/null 2>&1
   # Re-sort the window's tabs by name (in the background, so the session start isn't delayed)
   setsid "$(dirname "$(readlink -f "$0")")/sort-tabs.sh" </dev/null >/dev/null 2>&1 &
 fi
