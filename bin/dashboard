@@ -244,12 +244,14 @@ REGISTRY = {"busy": "busy", "shell": "monitoring", "waiting": "question"}   # Cl
 QDIR = ROOT / ".cockpit/questions"   # saved questions, one file per session (hooks/session-state.sh)
 ORPHANS = {}   # row -> session id of a saved question whose session isn't running, refreshed every frame
 ACTIONS = {}   # row -> last tool call of its most recently active running session, refreshed every frame
+ASKING = {}    # row -> pids of its running sessions with a question, so a click goes to the right tab
 def live_states(row_paths):
     """Row -> set of live states, and row -> dismiss actions: saved question files plus live state files
     waiting at a permission/question dialog. Sessions without a state file (started before the hooks were
     installed) fall back to Claude Code's own registry in ~/.claude/sessions/<pid>.json."""
     live, files = {}, {}
-    ORPHANS.clear(); ACTIONS.clear()
+    ORPHANS.clear(); ACTIONS.clear(); ASKING.clear()
+    pids = {}              # session id -> pid of its running Claude process
     running = set()        # rows with a running session
     hooked = set()         # pids with a state file from the hook
     for f in (HOME / ".cache/claude/sessions").glob("*.json"):
@@ -257,13 +259,14 @@ def live_states(row_paths):
             st = json.loads(f.read_text())
             if not alive(st["pid"]):
                 f.unlink(); continue                 # that Claude process is gone
-            hooked.add(st["pid"])
+            hooked.add(st["pid"]); pids[f.stem] = st["pid"]
             row = row_for(st["cwd"], row_paths)
             if not row: continue
             running.add(row)
             state = {"input": "question"}.get(st["state"], st["state"])
             live.setdefault(row, set()).add(state)
-            if state == "question": files.setdefault(row, []).append(f)
+            if state == "question":
+                files.setdefault(row, []).append(f); ASKING.setdefault(row, set()).add(st["pid"])
         except (OSError, ValueError, KeyError, TypeError):
             continue
     newest = {}            # row -> updatedAt of the session its action comes from
@@ -288,6 +291,7 @@ def live_states(row_paths):
             if not row: continue
             live.setdefault(row, set()).add("question")
             files.setdefault(row, []).append(f)
+            if q.get("session") in pids: ASKING.setdefault(row, set()).add(pids[q["session"]])
             if transcript(q.get("session", "")): ORPHANS.setdefault(row, q["session"])
         except (OSError, ValueError, KeyError, TypeError):
             continue
@@ -519,9 +523,12 @@ def goto_project(rel):
     the session of a saved question."""
     win = os.environ.get("KONSOLE_DBUS_WINDOW")
     if not (win and os.environ.get("KONSOLE_DBUS_SERVICE")): return
-    for sid in (qdbus(win, "sessionList") or "").split():
-        if qdbus(f"/Sessions/{sid}", "tabTitleFormat", "0") == rel:
-            qdbus(win, "setCurrentSession", sid); return
+    tabs = [sid for sid in (qdbus(win, "sessionList") or "").split()
+            if qdbus(f"/Sessions/{sid}", "tabTitleFormat", "0") == rel]
+    if tabs:   # several tabs for one project: prefer the one whose Claude is asking
+        asking = {str(p) for p in ASKING.get(rel, ())}
+        qdbus(win, "setCurrentSession", next((sid for sid in tabs if asking & children(qdbus(f"/Sessions/{sid}", "processId"))), tabs[0]))
+        return
     # Konsole's D-Bus can't run commands in a tab: the new shell starts claude when it finds its folder
     # in this marker, plus the session to resume on a second line (shell/bashrc.sh)
     cwd = str(ROOT if rel == NAME else ROOT / rel)
@@ -529,6 +536,11 @@ def goto_project(rel):
     sid = qdbus(win, "newSession", qdbus(win, "defaultProfile") or "", cwd)
     if sid:
         qdbus(win, "setCurrentSession", sid)
+
+def children(pid):
+    """Pids of a process's direct children (a tab's shell -> its claude)."""
+    try: return set(Path(f"/proc/{pid}/task/{pid}/children").read_text().split())
+    except (OSError, TypeError): return set()
 
 MOUSE = re.compile(r"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
 def handle_input(data):
