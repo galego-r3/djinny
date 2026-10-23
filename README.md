@@ -23,6 +23,12 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   and the 1Password CLI (`op`, app integration on), every secret is also kept in that 1Password vault:
   `secret push` copies the keyring into it, `secret pull` fills a new machine's keyring from it, and
   `secret get` falls back to it. Jobs still read the keyring, so they run without 1Password.
+- **Git before every answer**: each prompt first pulls the session's own repo (at most once a minute, a few
+  seconds at most, fast-forward only, never over local changes) and tells Claude which files came in.
+  `"after_pull"` in `cockpit.json` runs a command when the workspace repo moved (e.g. to clone new repos).
+- **Other machines**: each machine publishes its running sessions to the branch `cockpit-presence/<host>` of
+  the workspace repo (`lib/presence`); the dashboard shows a project open only elsewhere as `@<host>`, about a
+  minute behind.
 - **Updates**: every prompt pulls the cockpit in the background, so a change pushed from another machine
   arrives without doing anything; the next prompt says what came in.
 - **Rules**: not in here. They're a separate repo in `<workspace>/rules/` ([claude-rules](https://github.com/stemiwe/claude-rules));
@@ -39,6 +45,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting, opens the dashboard tab if the window has none |
 | `hooks/session-state.sh` | records each session's live state for the dashboard (`~/.cache/claude/sessions/`) and saves open questions apart from the session in `<workspace>/.cockpit/questions/` (versioned, so they move between machines) |
 | `hooks/cockpit-pull.sh` | UserPromptSubmit hook: pulls the cockpit in the background (at most once a minute, fast-forward only, never over local changes), re-runs `install.sh` when the pull touched it, `systemd/` or `plugins/`, reports the update on the next prompt; log `~/.cache/claude/cockpit-pull.log` |
+| `hooks/repo-pull.sh` | UserPromptSubmit hook: pulls the session's repo before Claude answers (see above); log `~/.cache/claude/repo-pull.log` |
+| `lib/presence` | `push` / `fetch` / `show` this and the other machines' running sessions (branches `cockpit-presence/<host>`, one parentless commit each, force-pushed) |
 | `hooks/sort-tabs.sh` | sorts the Konsole tabs of the current window |
 | `hooks/statusline.sh` | Claude Code status line |
 | `plugins/worklog/` | Claude Code mod: side pane with the project's status, the open `Your turn:` questions and a work log; `/worklog` reopens it |

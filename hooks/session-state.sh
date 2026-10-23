@@ -15,13 +15,14 @@
 dir="$HOME/.cache/claude/sessions"
 qdir="$ws/.cockpit/questions"
 mkdir -p "$dir"
+presence() { setsid "$(dirname "$(readlink -f "$0")")/../lib/presence" push </dev/null >/dev/null 2>&1 & }   # other machines see it
 in=$(cat)
 sid=$(jq -r '.session_id // empty' <<<"$in"); [ -z "$sid" ] && exit 0
 event=$(jq -r '.hook_event_name // empty' <<<"$in")
 f="$dir/$sid.json"
 cwd=$(jq -r '.cwd // empty' <<<"$in")
 
-if [ "$event" = SessionEnd ]; then rm -f "$f"; exit 0; fi
+if [ "$event" = SessionEnd ]; then rm -f "$f"; presence; exit 0; fi
 
 # PID of the claude process that runs this hook (first "claude" ancestor)
 pid=$PPID
@@ -87,4 +88,5 @@ esac
 jq -nc --arg state "$state" --argjson watch "$watch" --arg cwd "$cwd" \
   --argjson pid "${pid:-0}" --argjson ts "$(date +%s)" \
   '{state:$state, watch:$watch, cwd:$cwd, pid:$pid, ts:$ts}' > "$f.tmp" && mv "$f.tmp" "$f"
+presence
 exit 0

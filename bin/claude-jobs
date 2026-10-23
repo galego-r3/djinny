@@ -156,6 +156,10 @@ def main():
         rc = run(*match[0], state)
         print(f"{args[1]}: exit {rc}, log in {LOGS}")
         sys.exit(0 if rc == 0 else 1)
+    # Heartbeat for the dashboards on other machines: this machine's running sessions (lib/presence)
+    try: subprocess.run([Path(__file__).resolve().parent.parent / "lib/presence", "push", "--now"], timeout=60,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired: pass
     now, here = time.time(), single_jobs_here()
     for job_id, path, every, every_machine in jobs:
         if (every_machine or here) and due_at(job_id, every, state) <= now:

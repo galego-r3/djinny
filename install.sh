@@ -54,7 +54,7 @@ if [ -f "$ws/rules/RULES.md" ] && ! grep -qxF "@rules/RULES.md" "$ws/CLAUDE.md" 
 fi
 
 for f in "$here"/bin/*; do ln -sfn "$f" ~/.local/bin/"$(basename "$f")"; done
-for f in session-name.sh session-state.sh sort-tabs.sh cockpit-pull.sh; do ln -sfn "$here/hooks/$f" ~/.claude/hooks/$f; done
+for f in session-name.sh session-state.sh sort-tabs.sh cockpit-pull.sh repo-pull.sh; do ln -sfn "$here/hooks/$f" ~/.claude/hooks/$f; done
 ln -sfn "$here/hooks/statusline.sh" ~/.claude/statusline.sh
 "$here/lib/konsole-color" --profiles '#FF0096'   # tab colour profiles (Konsole without setTabColor); #FF0096 = dashboard
 
@@ -70,6 +70,7 @@ jq --argjson plugins "$plugins" '
   | reduce ("UserPromptSubmit", "PostToolUse", "Notification", "Stop", "SessionEnd") as $ev
       (.; add($ev; "~/.claude/hooks/session-state.sh"))
   | add("UserPromptSubmit"; "~/.claude/hooks/cockpit-pull.sh")
+  | add("UserPromptSubmit"; "~/.claude/hooks/repo-pull.sh")
   | .statusLine //= {type: "command", command: "~/.claude/statusline.sh", refreshInterval: 30}
   | .env.CLAUDE_CODE_PLUGIN_DIRS = ((.env.CLAUDE_CODE_PLUGIN_DIRS // "" | split(":") | map(select(. != ""))) as $have
       | $have + ($plugins - $have) | join(":"))

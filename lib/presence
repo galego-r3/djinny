@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Sessions running on other machines. Each machine publishes its running sessions (project + state, from
+# ~/.cache/claude/sessions/) to its own branch cockpit-presence/<host> of the workspace repo: one commit
+# without parent, force-pushed, built with git plumbing (the working tree and the index are never touched).
+# Needs the workspace to be a git repo with a remote "origin"; without one every command does nothing.
+#   presence push    publish this machine's sessions, only when they changed (and every 5 min while any run,
+#                    so idle sessions don't look gone). Called in the background by hooks/session-state.sh and
+#                    claude-jobs; calls in quick succession are merged into one push after a 20 s wait
+#                    (`push --now`: no wait, for claude-jobs, whose service would kill a waiting child).
+#   presence fetch   fetch the other machines' branches (the dashboard, every minute)
+#   presence show    print {"<host>": {"ts": …, "sessions": [{"project", "state"}]}} of the other machines,
+#                    leaving out machines that haven't pushed for 15 min
+. "$(dirname "$(readlink -f "$0")")/env.sh"
+git -C "$ws" remote get-url origin >/dev/null 2>&1 || exit 0
+host=$(uname -n)
+cache="$HOME/.cache/claude"; mkdir -p "$cache"
+export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=10" GIT_TERMINAL_PROMPT=0
+refs=refs/remotes/origin/cockpit-presence
+
+sessions() {   # this machine's running sessions as a JSON array, sorted
+  local f st pid
+  for f in "$cache"/sessions/*.json; do
+    [ -f "$f" ] || continue
+    st=$(cat "$f" 2>/dev/null) || continue
+    pid=$(jq -r '.pid // 0' <<<"$st" 2>/dev/null)
+    [ "$(cat "/proc/${pid:-0}/comm" 2>/dev/null)" = claude ] || continue
+    jq -c --arg p "$(ws_rel "$(jq -r '.cwd // empty' <<<"$st")")" \
+      'select($p != "") | {project: $p, state: .state}' <<<"$st" 2>/dev/null
+  done | jq -sc 'sort_by(.project, .state)'
+}
+
+push_once() {
+  local now list last blob tree commit
+  now=$(date +%s); list=$(sessions)
+  last=$(cat "$cache/presence.last" 2>/dev/null)
+  if [ "$list" = "${last#* }" ]; then                                   # unchanged: heartbeat only
+    [ "$list" != "[]" ] && [ $((now - $(stat -c %Y "$cache/presence.last"))) -ge 300 ] || return 0
+  fi
+  blob=$(jq -nc --arg h "$host" --argjson ts "$now" --argjson s "$list" '{host: $h, ts: $ts, sessions: $s}' \
+         | git -C "$ws" hash-object -w --stdin) || return 1
+  tree=$(printf '100644 blob %s\tpresence.json\n' "$blob" | git -C "$ws" mktree) || return 1
+  commit=$(GIT_AUTHOR_NAME=cockpit GIT_AUTHOR_EMAIL=cockpit@localhost GIT_COMMITTER_NAME=cockpit \
+           GIT_COMMITTER_EMAIL=cockpit@localhost git -C "$ws" commit-tree "$tree" -m "presence $host") || return 1
+  timeout 30 git -C "$ws" push -q -f origin "$commit:refs/heads/cockpit-presence/$host" 2>/dev/null || return 1
+  echo "$now $list" > "$cache/presence.last"
+}
+
+case "$1" in
+  push)
+    touch "$cache/presence.dirty"
+    exec 9>"$cache/presence.lock"; flock -n 9 || exit 0                 # the running push picks it up
+    [ "$2" = --now ] && { rm -f "$cache/presence.dirty"; push_once; exit; }
+    while [ -f "$cache/presence.dirty" ]; do
+      sleep 20; rm -f "$cache/presence.dirty"; push_once
+    done ;;
+  fetch)
+    exec 9>"$cache/presence-fetch.lock"; flock -n 9 || exit 0
+    timeout 30 git -C "$ws" fetch -q --prune origin "+refs/heads/cockpit-presence/*:$refs/*" 2>/dev/null ;;
+  show)
+    git -C "$ws" for-each-ref --format='%(refname)' "$refs/" | while read -r ref; do
+      [ "${ref##*/}" = "$host" ] && continue
+      git -C "$ws" cat-file -p "$ref:presence.json" 2>/dev/null
+    done | jq -sc --argjson now "$(date +%s)" \
+      'map(select(.ts > $now - 900 and (.sessions | length) > 0) | {key: .host, value: {ts, sessions}}) | from_entries' ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \?//'; exit 1 ;;
+esac

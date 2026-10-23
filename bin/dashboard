@@ -13,7 +13,8 @@ current 5h window, the current
   has the workspace's name. Rows go at most cockpit.json "depth" (default 2) levels deep: a project deeper
   down (e.g. a worktree in code/wba/wba-31) is counted toward its ancestor at that depth (code/wba). Folders in cockpit.json "hidden" and archived projects (Status: archived …)
   are skipped.
-- Live state = busy / question / monitoring, written by hooks/session-state.sh.
+- Live state = busy / question / monitoring, written by hooks/session-state.sh. A project with no session here
+  but one on another machine shows "@<host>" in that session's state colour (dim when idle; lib/presence).
 - Status = the "Status:" line under the title of the project's CLAUDE.md.
 - Colours = "colors" in the workspace's cockpit.json.
 - Tokens = input + cache writes + output from the transcripts in ~/.claude/projects (cache reads excluded).
@@ -298,6 +299,34 @@ def live_states(row_paths):
     for row in running: ORPHANS.pop(row, None)
     return live, files
 
+PRESENCE = Path(__file__).resolve().parent.parent / "lib/presence"
+_remote = {"fetch": None, "fetched": 0, "read": 0, "data": {}}
+def remote_states(row_paths):
+    """Row -> (state, host) of sessions on other machines (lib/presence): fetched in the background every
+    minute, read every 30 s and right after a fetch."""
+    now, r = time.time(), _remote
+    if r["fetch"] and r["fetch"].poll() is not None: r["fetch"], r["read"] = None, 0
+    if not r["fetch"] and now - r["fetched"] >= 60:
+        r["fetched"] = now
+        r["fetch"] = subprocess.Popen([PRESENCE, "fetch"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL, start_new_session=True)
+    if now - r["read"] >= 30:
+        r["read"] = now
+        try: r["data"] = json.loads(subprocess.run([PRESENCE, "show"], capture_output=True, text=True,
+                                                   timeout=10).stdout or "{}")
+        except (OSError, ValueError, subprocess.TimeoutExpired): pass
+    out = {}
+    order = list(STATES) + ["idle"]
+    for host, m in r["data"].items():
+        for st in m.get("sessions", []):
+            try:
+                row = row_for(str(ROOT if st["project"] == NAME else ROOT / st["project"]), row_paths)
+                state = st["state"] if st["state"] in order else "idle"
+            except (KeyError, TypeError): continue
+            if row and (row not in out or order.index(state) < order.index(out[row][0])):
+                out[row] = (state, host)
+    return out
+
 def transcript(sid):
     """True when this machine has the session's transcript, so `claude --resume` can open it."""
     return bool(sid) and any((HOME / ".claude/projects").glob(f"*/{sid}.jsonl"))
@@ -453,6 +482,7 @@ def frame():
         if ts >= windows["7d"]: c[1] += n
         c[2] += n
     live, qfiles = live_states(row_paths)
+    remote = remote_states(row_paths)
     DISMISS.clear(); CLICK.clear()
 
     W, H = shutil.get_terminal_size((120, 40))
@@ -479,6 +509,11 @@ def frame():
         sw = f"{esc(col, bg=True)}  {RST}" if col else f"{DIM}░░{RST}"
         state = next((s for s in STATES if s in live.get(rel, ())), "")
         label, width = state, len(state)
+        lcol = esc(STATES[state]) if state else ""
+        if not state and rel in remote:              # only running on another machine
+            rstate, host = remote[rel]
+            label = cut(f"@{host}", STATEW - 1); width = len(label)
+            lcol = esc(STATES[rstate]) if rstate in STATES else DIM
         if state == "question":                      # shown as "❓" (2 columns wide), with its dismiss key
             label, width = "❓", 2
             if len(DISMISS) < 9:
@@ -490,7 +525,7 @@ def frame():
         nums = " ".join(f"{heat(n, i)}{human(n):>{NUMW}}{RST}" for i, n in enumerate(u))
         act = f"{DIM}{cut(ACTIONS.get(rel, ''), actw):<{actw}}{RST}  " if actw else ""
         body.append(f"{sw} {cut(rel, namew):<{namew}}  "
-                   f"{BOLD}{esc(STATES[state]) if state else ''}{label}{' ' * (STATEW - width)}{RST}"
+                   f"{BOLD}{lcol}{label}{' ' * (STATEW - width)}{RST}"
                    f"{cut(st, statw):<{statw}}  {act}{nums}")
         body.append((esc(col) if col else DIM) + "▔" * rule_w + RST)
     room = max(2, H - len(out) - 2)                 # the rows scroll; header, total and help line stay
