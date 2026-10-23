@@ -76,7 +76,8 @@ installer links as `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) 
   "hidden":    ["cockpit", "tmp"],
   "aliases":   { "old-name": "new-name" },
   "old_roots": ["~/old/workspace/location"],
-  "depth":     2
+  "depth":     2,
+  "job_host":  "my-desktop"
 }
 ```
 
@@ -87,6 +88,9 @@ installer links as `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) 
 - `hidden`: folders that the dashboard and the job runner skip.
 - `depth` (default 2): how deep dashboard rows go. Deeper projects, e.g. worktrees in `group/repo/worktree`,
   count toward their ancestor at that depth.
+- `job_host`: with several machines on one workspace, the hostname that runs the jobs; others run only
+  jobs marked `# machines: all`, and take over the rest if the job host's heartbeat
+  (`.cockpit/job-host.json`) is older than a day. Unset: every machine runs every job.
 - `aliases` / `old_roots`: renamed folders and earlier workspace locations, so that older transcripts
   still count toward the right project's token use.
 

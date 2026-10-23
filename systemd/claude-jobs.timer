@@ -2,8 +2,8 @@
 Description=Run due workspace jobs every 5 minutes
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=5min
+# Wall-clock schedule: OnUnitActiveSec timers can end up "elapsed" with no next run after suspend/reload
+OnCalendar=*:0/5
 Persistent=true
 
 [Install]
