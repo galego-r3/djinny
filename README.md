@@ -16,8 +16,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 - **Tab colours** (`tab-color`): `tab-color red` saves the current project's colour in `cockpit.json` and
   colours its tab now; sessions run it when the user names a colour.
 - **Jobs** (`claude-jobs`): runs `<project>/jobs/<name>` scripts on their interval (systemd user timer).
-- **Archive**: a project whose `Status:` line starts with `archived` is hidden from the dashboard and its
-  jobs stop (rules C1).
+- **Archive**: a project whose `Status:` line starts with `archived` is listed dimmed at the end of its category
+  tab on the dashboard, and its jobs stop (rules C1).
 - **Secrets** (`secret`): `secret set aligulac` stores an API key in the keyring (hidden prompt), `secret get`
   reads it. A shorter way to type `secret-tool store --label=… service …`. With `vault` set in `cockpit.json`
   and the 1Password CLI (`op`, app integration on), every secret is also kept in that 1Password vault:

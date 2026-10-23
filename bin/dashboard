@@ -2,8 +2,9 @@
 """Workspace dashboard, runs full-screen until you quit (q or Ctrl+C). Start it with `dashboard`
 (symlinked into ~/.local/bin by install.sh).
 
-Four tabs (Tab key or click): Active, Archive (projects whose Status: line starts with "archived"),
-To-dos (the to-do file from cockpit.json "todo_file" plus chores due within 7 days; click ☐ to tick an item)
+Tabs (Tab key or click): Active (projects with a running session here or on another machine, or a saved
+question), one per category (the first folder of the project's path; projects directly in the workspace and the
+root go under "other"; archived projects, Status: archived …, at the end, dimmed), To-dos (the to-do file from cockpit.json "todo_file" plus chores due within 7 days; click ☐ to tick an item)
 and Commands (the cockpit's commands with the usage lines from their headers, plus cockpit.json "commands":
 {"command": "what it does"}). Scroll with the wheel or ↑/↓/PgUp/PgDn when a tab doesn't fit.
 One row per project: colour, live state, status line, last tool call of a running session, tokens used in the
@@ -11,8 +12,8 @@ current 5h window, the current
 7d window and all time.
 - Project = folder with a CLAUDE.md and no project below it (parent folders don't count); the root's row
   has the workspace's name. Rows go at most cockpit.json "depth" (default 2) levels deep: a project deeper
-  down (e.g. a worktree in code/wba/wba-31) is counted toward its ancestor at that depth (code/wba). Folders in cockpit.json "hidden" and archived projects (Status: archived …)
-  are skipped.
+  down (e.g. a worktree in code/wba/wba-31) is counted toward its ancestor at that depth (code/wba). Folders in
+  cockpit.json "hidden" are skipped.
 - Live state = busy / question / monitoring, written by hooks/session-state.sh. A project with no session here
   but one on another machine shows "@<host>" in that session's state colour (dim when idle; lib/presence).
 - Status = the "Status:" line under the title of the project's CLAUDE.md.
@@ -95,9 +96,17 @@ def load_rows():
 
 def is_archived(status): return status.lower().startswith("archived")
 
-VIEWS = ["Active", "Archive", "To-dos", "Commands"]   # projects in work / archived projects / to-dos / commands
-VIEW = [0]                      # index of the current tab
-TABS = []                       # (start column, end column, view index) of each tab label, for clicks
+OTHER = "other"                 # category of projects directly in the workspace, and of the root
+def category(rel): return rel.split("/", 1)[0] if "/" in rel else OTHER
+
+def views(all_rows):
+    """Active, one tab per category (A–Z, "other" last), To-dos, Commands."""
+    cats = sorted({category(r) for r, _ in all_rows}, key=lambda c: (c == OTHER, c))
+    return ["Active", *cats, "To-dos", "Commands"]
+
+VIEWS = ["Active", "To-dos", "Commands"]   # refreshed every frame
+VIEW = ["Active"]               # name of the current tab
+TABS = []                       # (screen line, start column, end column, view name) of each tab label, for clicks
 TICK = {}                       # screen line -> (to-do file line index, item text) in the To-dos tab
 SCROLL = [0]                    # first body line shown (project rows, to-dos, commands)
 
@@ -246,6 +255,7 @@ QDIR = ROOT / ".cockpit/questions"   # saved questions, one file per session (ho
 ORPHANS = {}   # row -> session id of a saved question whose session isn't running, refreshed every frame
 ACTIONS = {}   # row -> last tool call of its most recently active running session, refreshed every frame
 ASKING = {}    # row -> pids of its running sessions with a question, so a click goes to the right tab
+RUNNING = set()  # rows with a running session on this machine, refreshed every frame
 def live_states(row_paths):
     """Row -> set of live states, and row -> dismiss actions: saved question files plus live state files
     waiting at a permission/question dialog. Sessions without a state file (started before the hooks were
@@ -297,6 +307,7 @@ def live_states(row_paths):
         except (OSError, ValueError, KeyError, TypeError):
             continue
     for row in running: ORPHANS.pop(row, None)
+    RUNNING.clear(); RUNNING.update(running)
     return live, files
 
 PRESENCE = Path(__file__).resolve().parent.parent / "lib/presence"
@@ -358,7 +369,7 @@ def fmt_reset(ts):
     t = time.localtime(ts)
     return time.strftime("%H:%M" if time.strftime("%F", t) == time.strftime("%F") else "%a %H:%M", t)
 
-def header(limits, n_arch, n_todo):
+def header(limits, n_active, n_todo):
     head = f"{BOLD}{esc('#7EC8F7')}▌ {NAME} workspace{RST} {DIM}{time.strftime('%Y-%m-%d %H:%M:%S')}"
     for label in ("5h", "7d"):
         if label in limits:
@@ -366,17 +377,20 @@ def header(limits, n_arch, n_todo):
             head += f"  {label} {pct:.0f}% ↻ {fmt_reset(reset)}" if pct is not None else f"  {label} ↻ {fmt_reset(reset)}"
         else:
             head += f"  {label} rolling"
-    # Tab bar: filled buttons, the current tab in the header colour, the others grey
-    bar, col_ = " ", 2
+    # Tab bar: filled buttons, the current tab in the header colour, the others grey; wraps when too wide
+    W = shutil.get_terminal_size((120, 40)).columns
+    bars, bar, col_ = [], " ", 2
     TABS.clear()
-    for i, name in enumerate(VIEWS):
-        n = (None, n_arch, n_todo, None)[i]
+    for name in VIEWS:
+        n = {"Active": n_active, "To-dos": n_todo}.get(name)
         label = f" {name} ({n}) " if n is not None else f" {name} "
-        TABS.append((col_, col_ + len(label) - 1, i))
-        bar += (f"{BOLD}{esc('#7EC8F7', bg=True)}{esc('#101820')}{label}{RST}" if i == VIEW[0]
+        if col_ > 2 and col_ + len(label) > W:
+            bars.append(bar); bar, col_ = " ", 2
+        TABS.append((2 + len(bars), col_, col_ + len(label) - 1, name))
+        bar += (f"{BOLD}{esc('#7EC8F7', bg=True)}{esc('#101820')}{label}{RST}" if name == VIEW[0]
                 else f"{esc('#3A3F47', bg=True)}{esc('#C8CCD2')}{label}{RST}") + " "
         col_ += len(label) + 1
-    return [head + RST, bar]
+    return [head + RST, *bars, bar]
 
 def todo_frame(head, W, H, colors):
     """The To-dos tab: pinned lines, agent questions, chores due soon, open items per section."""
@@ -466,13 +480,18 @@ def frame():
     tpath = todos.todo_file(ROOT, CONF)
     n_todo = len(todos.open_items(tpath)) if tpath else 0
     row_paths = sorted((r for r, _ in all_rows if r != NAME), key=len, reverse=True)   # usage counts for all
-    n_arch = sum(is_archived(st) for _, st in all_rows)
-    rows = [(r, st) for r, st in all_rows if is_archived(st) == (VIEW[0] == 1)]
+    VIEWS[:] = views(all_rows)
+    if VIEW[0] not in VIEWS: VIEW[0] = "Active"     # e.g. the last project of a category was removed
     windows, limits = rate_windows(now)
-    if VIEW[0] >= 2:
+    live, qfiles = live_states(row_paths)
+    remote = remote_states(row_paths)
+    active = [(r, st) for r, st in all_rows if r in RUNNING or r in live or r in remote]
+    if VIEW[0] in ("To-dos", "Commands"):
         W, H = shutil.get_terminal_size((120, 40))
-        if VIEW[0] == 3: return commands_frame(header(limits, n_arch, n_todo), W, H)
-        return todo_frame(header(limits, n_arch, n_todo), W, H, colors)
+        if VIEW[0] == "Commands": return commands_frame(header(limits, len(active), n_todo), W, H)
+        return todo_frame(header(limits, len(active), n_todo), W, H, colors)
+    rows = active if VIEW[0] == "Active" else sorted(
+        ((r, st) for r, st in all_rows if category(r) == VIEW[0]), key=lambda x: is_archived(x[1]))
     usage = {}
     for cwd, ts, n in transcript_entries():
         row = row_for(cwd, row_paths)
@@ -481,21 +500,19 @@ def frame():
         if ts >= windows["5h"]: c[0] += n
         if ts >= windows["7d"]: c[1] += n
         c[2] += n
-    live, qfiles = live_states(row_paths)
-    remote = remote_states(row_paths)
     DISMISS.clear(); CLICK.clear()
 
     W, H = shutil.get_terminal_size((120, 40))
     NUMW, STATEW = 6, 12                 # state column fits "monitoring" plus a gap
-    namew = min(28, max(len(r) for r, _ in rows))
+    namew = min(28, max((len(r) for r, _ in rows), default=5))
     fixed = 3 + namew + 2 + STATEW + 2 + 3 * NUMW + 2
     # Last tool call of running sessions, in its own column when the terminal has room for it
     actw = min(48, W - fixed - 12 - 3) if any(ACTIONS.get(r) for r, _ in rows) else 0
     actw = actw if actw >= 20 else 0
     actcol = actw + 2 if actw else 0
-    statw = max(12, min(max(len(s) for _, s in rows), W - fixed - 1 - actcol))
+    statw = max(12, min(max((len(s) for _, s in rows), default=12), W - fixed - 1 - actcol))
 
-    out = header(limits, n_arch, n_todo)
+    out = header(limits, len(active), n_todo)
     pad = " " * (3 + namew + 2 + STATEW + statw + 2 + actcol)
     out.append(pad + " ".join(f"{BOLD}{esc(c)}{t:>{NUMW}}{RST}" for t, c in zip(("5h", "7d", "all"), HCOL)))
 
@@ -524,10 +541,12 @@ def frame():
         tot = [a + b for a, b in zip(tot, u)]
         nums = " ".join(f"{heat(n, i)}{human(n):>{NUMW}}{RST}" for i, n in enumerate(u))
         act = f"{DIM}{cut(ACTIONS.get(rel, ''), actw):<{actw}}{RST}  " if actw else ""
-        body.append(f"{sw} {cut(rel, namew):<{namew}}  "
+        arch = DIM if is_archived(st) else ""
+        body.append(f"{sw} {arch}{cut(rel, namew):<{namew}}{RST}  "
                    f"{BOLD}{lcol}{label}{' ' * (STATEW - width)}{RST}"
-                   f"{cut(st, statw):<{statw}}  {act}{nums}")
+                   f"{arch}{cut(st, statw):<{statw}}{RST}  {act}{nums}")
         body.append((esc(col) if col else DIM) + "▔" * rule_w + RST)
+    if not rows: body.append(f"   {DIM}no running sessions{RST}")
     room = max(2, H - len(out) - 2)                 # the rows scroll; header, total and help line stay
     SCROLL[0] = max(0, min(SCROLL[0], len(body) - room))
     for i, line in enumerate(body[SCROLL[0]:SCROLL[0] + room]):
@@ -590,10 +609,10 @@ def handle_input(data):
         if b in ("64", "65") and kind == "M":                     # mouse wheel
             SCROLL[0] = max(0, SCROLL[0] + (3 if b == "65" else -3)); redraw = False; continue
         if b != "0" or kind != "M": continue                      # left button press only
-        if int(y) == 2:                                           # tab bar (second line)
-            for start, end, i in TABS:
-                if start <= int(x) <= end: VIEW[0] = i; SCROLL[0] = 0; redraw = False
-        elif VIEW[0] == 2:
+        if any(line == int(y) for line, *_ in TABS):              # tab bar (second line on)
+            for line, start, end, name in TABS:
+                if line == int(y) and start <= int(x) <= end: VIEW[0] = name; SCROLL[0] = 0; redraw = False
+        elif VIEW[0] == "To-dos":
             if int(y) - 1 in TICK and int(x) <= 6:                # the ☐ column
                 todos.tick(todos.todo_file(ROOT, CONF), *TICK[int(y) - 1]); redraw = False
         elif int(y) - 1 in CLICK:
@@ -601,7 +620,7 @@ def handle_input(data):
     rest = MOUSE.sub("", data)
     for ch in rest:
         if ch in ("q", "Q"): return True
-        if ch == "\t": VIEW[0] = (VIEW[0] + 1) % len(VIEWS); SCROLL[0] = 0; redraw = False
+        if ch == "\t": VIEW[0] = VIEWS[(VIEWS.index(VIEW[0]) + 1) % len(VIEWS)]; SCROLL[0] = 0; redraw = False
         if ch in DISMISS: dismiss(ch); redraw = False
     return redraw
 
