@@ -77,6 +77,7 @@ label=$(jq -r '.name // empty' "$ws/cockpit.json" 2>/dev/null); label=${label:-C
 desktop claude-cockpit "$label" "Claude Code sessions of the workspace (reopens the ones open before)" "$HOME/.local/bin/cockpit"
 desktop claude-dashboard "$label dashboard" "Live view of every project" "$HOME/.local/bin/dashboard --window"
 command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true
+[ "$(jq -r '.pin_launchers // false' "$ws/cockpit.json" 2>/dev/null)" = true ] && "$here/lib/pin-launchers" claude-cockpit claude-dashboard
 # cockpit.json "pin_launchers": true pins both to the first two slots of every Plasma task manager (each run)
 if [ "$(jq -r '.pin_launchers // false' "$ws/cockpit.json" 2>/dev/null)" = true ] && command -v qdbus6 >/dev/null; then
   qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '

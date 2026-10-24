@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Pins launchers to every Plasma task manager (taskbar) of this user, after the ones already pinned; ones
+# already there are left alone: pin-launchers <desktop file name>… (e.g. claude-cockpit). Run by install.sh
+# with "pin_launchers": true in cockpit.json. Does nothing without a running plasmashell.
+[ $# -gt 0 ] || exit 2
+for a in "$@"; do [[ $a =~ ^[A-Za-z0-9._-]+$ ]] || exit 2; done
+apps=$(printf '"applications:%s.desktop",' "$@")
+qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
+var add = [${apps%,}];
+panels().forEach(function (p) { p.widgets().forEach(function (w) {
+  if (!/\.(taskmanager|icontasks)$/.test(w.type)) return;
+  w.currentConfigGroup = ['General'];
+  var l = w.readConfig('launchers', []);
+  if (typeof l === 'string') l = l ? l.split(',') : [];
+  var n = l.length;
+  add.forEach(function (a) { if (l.indexOf(a) < 0) l.push(a); });
+  if (l.length > n) { w.writeConfig('launchers', l); w.reloadConfig(); }
+}); });" >/dev/null 2>&1 || true
