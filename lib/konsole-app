@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Run Konsole as an app of its own: konsole-app <desktop file name> [konsole args…]
+# Plasma's taskbar files every window whose process is called "konsole" under Konsole, whatever its
+# --desktopfile says, so this runs a copy of the konsole binary named after the desktop file
+# (~/.local/lib/claude-cockpit/<name>, refreshed whenever /usr/bin/konsole changes). Its windows then sit under
+# their own launcher (claude-cockpit, claude-dashboard).
+set -eu
+app=${1:?usage: konsole-app <desktop file name> [konsole args…]}; shift
+[[ $app =~ ^[A-Za-z0-9._-]+$ ]] || exit 2
+src=$(command -v konsole); bin="$HOME/.local/lib/claude-cockpit/$app"
+if ! cmp -s "$src" "$bin"; then
+  mkdir -p "${bin%/*}"; cp "$src" "$bin.tmp.$$" && chmod +x "$bin.tmp.$$" && mv "$bin.tmp.$$" "$bin"
+fi
+exec "$bin" --separate --desktopfile "$app" "$@"

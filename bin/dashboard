@@ -718,7 +718,7 @@ def goto_project(rel):
     target = (next((w for w in ours if w[:2] == (own_svc, own_win)), None)
               or next((w for w in ours if tabs_of(w[0], w[1], NAME)), None) or next(iter(ours), None))
     if not target:
-        subprocess.Popen(["konsole", "--separate", "--desktopfile", APP, "--workdir", cwd], start_new_session=True,
+        subprocess.Popen([LIB / "konsole-app", APP, "--workdir", cwd], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
     svc, win, pid, _ = target
@@ -736,7 +736,7 @@ def open_window(if_closed=False):
         if d.name.isdigit() and app_of(d.name) == DASH_APP:
             if not if_closed: subprocess.run([LIB / "kwin-activate", d.name])
             return
-    subprocess.Popen(["konsole", "--separate", "--desktopfile", DASH_APP, "--workdir", str(ROOT),
+    subprocess.Popen([LIB / "konsole-app", DASH_APP, "--workdir", str(ROOT),
                       "-e", str(Path(__file__).resolve()), "--tui"], start_new_session=True,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

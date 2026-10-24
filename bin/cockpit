@@ -51,7 +51,7 @@ fi
 if [ ${#tabs[@]} -gt 0 ]; then
   # The first tab is the window's own (-e), the others come from a tabs file (else Konsole adds a plain shell tab)
   IFS='|' read -r n d s <<<"${tabs[0]}"
-  args=(--separate --desktopfile claude-cockpit --workdir "$d")
+  args=(--workdir "$d")
   if [ ${#tabs[@]} -gt 1 ]; then
     list="$HOME/.cache/claude/cockpit-tabs"
     for t in "${tabs[@]:1}"; do
@@ -61,7 +61,7 @@ if [ ${#tabs[@]} -gt 0 ]; then
     args+=(--tabs-from-file "$list")
   fi
   for t in "${tabs[@]}"; do IFS='|' read -r n d s2 <<<"$t"; echo "${s2:-root}"; done > "$launched"
-  setsid konsole "${args[@]}" -e "$here/cockpit" tab $s </dev/null >/dev/null 2>&1 &
+  setsid "$here/../lib/konsole-app" claude-cockpit "${args[@]}" -e "$here/cockpit" tab $s </dev/null >/dev/null 2>&1 &
 else   # everything is open: bring the sessions' window to the front
   for d in /proc/[0-9]*; do
     if tr '\0' ' ' < "$d/cmdline" 2>/dev/null | grep -q -- '--desktopfile claude-cockpit '; then "$here/../lib/kwin-activate" "${d#/proc/}"; break; fi
