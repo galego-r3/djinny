@@ -113,6 +113,7 @@ def views(all_rows):
     return ["Active", *cats, "To-dos", "Commands"]
 
 VIEWS = ["Active", "To-dos", "Commands"]   # refreshed every frame
+CATCOL = {}                     # category tab -> its colour: its own entry in "colors", else its projects' middle shade
 VIEW = ["Active"]               # name of the current tab
 TABS = []                       # (screen line, start column, end column, view name) of each tab label, for clicks
 TICK = {}                       # screen line -> (to-do file line index, item text) in the To-dos tab
@@ -126,6 +127,14 @@ def color_of(rel, colors):
         if rel in colors: return colors[rel]
         if "/" not in rel: return None
         rel = rel.rsplit("/", 1)[0]
+
+def cat_colors(all_rows, colors):
+    shades = {}
+    for r, _ in all_rows:
+        c = color_of(r, colors)
+        if c and "/" in r: shades.setdefault(category(r), set()).add(c)
+    light = lambda h: sum(rgb(h))
+    return {cat: colors.get(cat) or sorted(cs, key=light)[len(cs) // 2] for cat, cs in shades.items()}
 
 def row_for(cwd, row_paths):
     for base in [ROOT, *OLD_ROOTS]:
@@ -410,18 +419,22 @@ def header(limits, n_active, n_todo):
             head += f"  {label} {pct:.0f}% ↻ {fmt_reset(reset)}" if pct is not None else f"  {label} ↻ {fmt_reset(reset)}"
         else:
             head += f"  {label} rolling"
-    # Tab bar: filled buttons, the current tab in the header colour, the others grey; wraps when too wide
+    # Tab bar: filled buttons, a category in its colour, the others grey (the current one in the header colour);
+    # the current tab is bold and marked ▸; wraps when too wide
     W = shutil.get_terminal_size((120, 40)).columns
     bars, bar, col_ = [], " ", 2
     TABS.clear()
     for name in VIEWS:
         n = {"Active": n_active, "To-dos": n_todo}.get(name)
         label = f" {name} ({n}) " if n is not None else f" {name} "
+        if name == VIEW[0]: label = f"▸{label}"
         if col_ > 2 and col_ + len(label) > W:
             bars.append(bar); bar, col_ = " ", 2
         TABS.append((2 + len(bars), col_, col_ + len(label) - 1, name))
-        bar += (f"{BOLD}{esc('#7EC8F7', bg=True)}{esc('#101820')}{label}{RST}" if name == VIEW[0]
-                else f"{esc('#3A3F47', bg=True)}{esc('#C8CCD2')}{label}{RST}") + " "
+        c = CATCOL.get(name) or ('#7EC8F7' if name == VIEW[0] else None)
+        fg = '#101820' if c and sum(rgb(c)) > 380 else '#FFFFFF'
+        bar += ((BOLD if name == VIEW[0] else "") + (f"{esc(c, bg=True)}{esc(fg)}" if c
+                else f"{esc('#3A3F47', bg=True)}{esc('#C8CCD2')}") + f"{label}{RST}") + " "
         col_ += len(label) + 1
     return [head + RST, *bars, bar]
 
@@ -574,6 +587,7 @@ def frame():
     n_todo = len(todos.open_items(tpath)) if tpath else 0
     row_paths = sorted((r for r, _ in all_rows if r != NAME), key=len, reverse=True)   # usage counts for all
     VIEWS[:] = views(all_rows)
+    CATCOL.clear(); CATCOL.update(cat_colors(all_rows, colors))
     if VIEW[0] not in VIEWS: VIEW[0] = "Active"     # e.g. the last project of a category was removed
     windows, limits = rate_windows(now)
     live, qfiles = live_states(row_paths)
