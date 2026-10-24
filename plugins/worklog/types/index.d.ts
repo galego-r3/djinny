@@ -1,4 +1,4 @@
-export type LogEntry = { time: string; asked: string; did: string }
+export type LogEntry = { time: string; asked: string; did: string; topic?: string }
 
 declare module 'claude-code' {
   interface PluginState {

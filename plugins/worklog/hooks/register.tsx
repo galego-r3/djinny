@@ -4,7 +4,8 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { LogEntry } from '../types'
 
 // Side pane: the open "❓ Your turn" block of the last reply, the project's open to-dos (cockpit.json "todo_file",
-// section "## <project>"), the project's Status: line, and one log line per turn
+// section "## <project>"), the project's Status: line, and one log line per turn: its topic in a few words
+// (summarised by a small model; until it answers, or if it fails, the start of the prompt)
 const PANE = 'worklog'
 const TITLE = 'Work log'
 const MARKER = '❓ **Your turn:**'
@@ -22,6 +23,17 @@ const oneLine = (s: string, n: number) => {
 // First sentence of a reply: what was done
 const firstSentence = (s: string) => oneLine(s.split(MARKER)[0].split(/(?<=[.!?])\s|\n\n/)[0] ?? '', 160)
 const hhmm = () => new Date().toTimeString().slice(0, 5)
+
+// Topic of a turn in a few words, by a small model; undefined if it doesn't answer
+async function topicOf($: EngineInterface, asked: string, reply: string) {
+  const r = await $.model.complete({
+    model: 'haiku', maxTokens: 30,
+    system: 'You label conversation turns for a work log. Answer with the topic only: at most 8 words, no ' +
+      'full sentence, no quotes, no trailing period, in the language of the request.',
+    prompt: `Request:\n${oneLine(asked, 600)}\n\nReply:\n${oneLine(reply.split(MARKER)[0], 800)}`,
+  })
+  return r.isAnswered ? oneLine(r.text.split('\n')[0].replace(/^["'„]|["'“]$|\.$/g, ''), 70) : undefined
+}
 
 // The Status: line of the nearest CLAUDE.md, from the working directory up
 async function readStatus($: EngineInterface, cwd: string) {
@@ -93,7 +105,12 @@ export const register: Register = on => {
     const asked = prompts.get(e.turnId) ?? ''
     prompts.delete(e.turnId)
     const did = e.reason === 'answer' ? firstSentence(text) : e.reason
-    if (asked || did) await update($, log, l => [...l, { time: hhmm(), asked: oneLine(asked, 100), did }].slice(-100))
+    if (asked || did) {
+      const time = hhmm()
+      await update($, log, l => [...l, { time, asked: oneLine(asked, 100), did }].slice(-100))
+      void topicOf($, asked, text).then(topic => topic && update($, log, l =>
+        l.map(en => en.time === time && en.did === did && !en.topic ? { ...en, topic } : en))).catch(() => {})
+    }
     refresh($, $.session.cwd())
     return done
   })
@@ -121,11 +138,8 @@ export const register: Register = on => {
         <Text> </Text>
         <Text bold color="yellow">Log</Text>
         {entries.length === 0 && <Text dimColor>nothing yet</Text>}
-        {entries.slice(-Math.max(1, Math.floor(room / 2))).map(en => (
-          <Box flexDirection="column">
-            <Text wrap="truncate-end"><Text dimColor>{en.time}</Text> {en.asked || '(continued)'}</Text>
-            <Text wrap="wrap" dimColor>  → {en.did}</Text>
-          </Box>
+        {entries.slice(-room).map(en => (
+          <Text wrap="truncate-end"><Text dimColor>{en.time}</Text> {en.topic || en.asked || '(continued)'}</Text>
         ))}
       </Box>
     )
