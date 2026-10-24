@@ -17,8 +17,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 - **Own window and taskbar icon**: with `"dashboard": "window"` in `cockpit.json`, the dashboard runs in a
   Konsole window of its own (`dashboard --window`; opened on session start if closed). `install.sh` adds two
   launchers to pin to the taskbar, each with its own icon, named after the workspace (`name` in `cockpit.json`,
-  else "Claude"): **<name>** (`cockpit`, the sessions' window) and **<name> dashboard**. With `"pin_launchers": true` in `cockpit.json`, `install.sh` pins both to the Plasma taskbar
-  (`lib/pin-launchers`; on every machine, as the cockpit pull re-runs it). `"icons": {"cockpit": …, "dashboard": …}` (SVG or PNG,
+  else "Claude"): **<name>** (`cockpit`, the sessions' window) and **<name> dashboard**. `"icons": {"cockpit": …, "dashboard": …}` (SVG or PNG,
   relative to the workspace) replaces their icons. With `"pin_launchers": true` in
   `cockpit.json`, every install run pins them to the first two slots of each Plasma task manager. Konsole's `--desktopfile` gives their windows their own Wayland app id, so they don't
   group under Konsole. Clicking a project raises the window holding its tab (KWin script, `lib/kwin-activate`).
