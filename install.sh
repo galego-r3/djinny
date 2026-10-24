@@ -61,10 +61,17 @@ for f in session-name.sh session-state.sh sort-tabs.sh cockpit-pull.sh repo-pull
 ln -sfn "$here/hooks/statusline.sh" ~/.claude/statusline.sh
 # launchers with their own taskbar icons (the windows' Wayland app id = desktop file name): the sessions and the dashboard
 mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps
-for app in claude-cockpit claude-dashboard; do ln -sfn "$here/icons/$app.svg" ~/.local/share/icons/hicolor/scalable/apps/$app.svg; done
-desktop() {   # file name, Name, Comment, Exec
+# cockpit.json "icons": {"cockpit": "<svg/png>", "dashboard": "…"} (paths relative to the workspace) replaces an icon
+for app in claude-cockpit claude-dashboard; do
+  own=$(jq -r --arg k "${app#claude-}" '.icons[$k] // empty' "$ws/cockpit.json" 2>/dev/null)
+  src="$here/icons/$app.svg"; [ -n "$own" ] && [ -f "$ws/$own" ] && src="$ws/$own"
+  rm -f ~/.local/share/icons/hicolor/scalable/apps/$app.*
+  ln -sfn "$src" ~/.local/share/icons/hicolor/scalable/apps/$app.${src##*.}
+done
+desktop() {   # file name, Name, Comment, Exec; Icon as a full path (the taskbar doesn't always find it by name)
+  local icon; icon=$(ls ~/.local/share/icons/hicolor/scalable/apps/"$1".* 2>/dev/null | head -n1)
   printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=%s\nIcon=%s\nStartupWMClass=%s\nTerminal=false\nCategories=Development;\n' \
-    "$2" "$3" "$4" "$1" "$1" > ~/.local/share/applications/"$1".desktop
+    "$2" "$3" "$4" "${icon:-$1}" "$1" > ~/.local/share/applications/"$1".desktop
 }
 label=$(jq -r '.name // empty' "$ws/cockpit.json" 2>/dev/null); label=${label:-Claude}   # launcher names: the workspace's name
 desktop claude-cockpit "$label" "Claude Code sessions of the workspace (reopens the ones open before)" "$HOME/.local/bin/cockpit"
