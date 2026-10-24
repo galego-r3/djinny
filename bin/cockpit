@@ -19,13 +19,17 @@ if [ "${1:-}" = tab ]; then   # inside a new tab: resume the session (or start o
   exec bash -ic 'claude ${1:+--resume "$1"} ${2:+--remote-control "$2"} || exec bash -i' bash "${1:-}" "$rc"
 fi
 
-# Running sessions (their claude process is alive), from the dashboard's live state files
+# Running sessions: Claude Code's own registry (~/.claude/sessions/<pid>.json, written at start), live pid only.
+# Sessions this command launched in the last minute count as running too (not registered yet), so starting
+# it twice doesn't open them twice.
 running=" "
-for f in "$HOME"/.cache/claude/sessions/*.json; do
+for f in "$HOME"/.claude/sessions/*.json; do
   [ -f "$f" ] || continue
-  p=$(jq -r '.pid // 0' "$f" 2>/dev/null)
-  [ "$(cat "/proc/${p:-0}/comm" 2>/dev/null)" = claude ] && running+="$(basename "$f" .json) "
+  read -r p sid < <(jq -r '"\(.pid // 0) \(.sessionId // "")"' "$f" 2>/dev/null) || continue
+  [ -n "$sid" ] && [ "$(cat "/proc/${p:-0}/comm" 2>/dev/null)" = claude ] && running+="$sid "
 done
+launched="$HOME/.cache/claude/cockpit-launched"
+[ -f "$launched" ] && [ $(( $(date +%s) - $(stat -c %Y "$launched") )) -lt 60 ] && running+="$(tr '\n' ' ' < "$launched")"
 
 tabs=()
 for f in "$odir"/*; do
@@ -33,9 +37,10 @@ for f in "$odir"/*; do
   sid=$(basename "$f"); dir=$(sed -n 1p "$f"); tp=$(sed -n 2p "$f")
   [[ $running == *" $sid "* ]] && continue
   if [ ! -d "$dir" ] || [ ! -f "$tp" ]; then rm -f "$f"; continue; fi   # folder or conversation gone
+  grep -qm1 '^Status: archived' "$dir/CLAUDE.md" 2>/dev/null && { rm -f "$f"; continue; }   # archived project
   tabs+=("$(ws_rel "$dir")|$dir|$sid")
 done
-[ ${#tabs[@]} -gt 0 ] || [ "$running" != " " ] || tabs=("$ws_name|$ws|")
+[ ${#tabs[@]} -gt 0 ] || [[ $running == *[a-z0-9]* ]] || tabs=("$ws_name|$ws|")
 
 if [ "${1:-}" = list ]; then
   for t in "${tabs[@]}"; do IFS='|' read -r n d s <<<"$t"; echo "$n  ${s:-(new session)}"; done
@@ -55,7 +60,12 @@ if [ ${#tabs[@]} -gt 0 ]; then
     done > "$list"
     args+=(--tabs-from-file "$list")
   fi
+  for t in "${tabs[@]}"; do IFS='|' read -r n d s2 <<<"$t"; echo "${s2:-root}"; done > "$launched"
   setsid konsole "${args[@]}" -e "$here/cockpit" tab $s </dev/null >/dev/null 2>&1 &
+else   # everything is open: bring the sessions' window to the front
+  for d in /proc/[0-9]*; do
+    if tr '\0' ' ' < "$d/cmdline" 2>/dev/null | grep -q -- '--desktopfile claude-cockpit '; then "$here/../lib/kwin-activate" "${d#/proc/}"; break; fi
+  done
 fi
 case "$(jq -r '.dashboard // "terminal"' "$conf" 2>/dev/null)" in
   web) "$here/cockpit-web" open --new ;;
