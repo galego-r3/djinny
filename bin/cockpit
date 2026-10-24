@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Start the cockpit: a new Konsole window with a tab for every workspace session that was open before
+# (resumed with claude --resume; recorded by hooks/session-state.sh in ~/.cache/claude/open/), and the web
+# dashboard in the browser. Sessions still running are skipped; with none to reopen, the root session starts.
+#   cockpit          start it
+#   cockpit list     show what it would reopen
+# install.sh also links it under cockpit.json "command" (e.g. the root's name), if set.
+set -euo pipefail
+here=$(dirname "$(readlink -f "$0")")
+. "$here/../lib/env.sh"
+odir="$HOME/.cache/claude/open"
+
+if [ "${1:-}" = tab ]; then   # inside a new tab: resume the session (or start one); a shell stays if claude fails
+  shift
+  exec bash -ic 'claude ${1:+--resume "$1"} || exec bash -i' bash "${1:-}"
+fi
+
+# Running sessions (their claude process is alive), from the dashboard's live state files
+running=" "
+for f in "$HOME"/.cache/claude/sessions/*.json; do
+  [ -f "$f" ] || continue
+  p=$(jq -r '.pid // 0' "$f" 2>/dev/null)
+  [ "$(cat "/proc/${p:-0}/comm" 2>/dev/null)" = claude ] && running+="$(basename "$f" .json) "
+done
+
+tabs=()
+for f in "$odir"/*; do
+  [ -f "$f" ] || continue
+  sid=$(basename "$f"); dir=$(sed -n 1p "$f"); tp=$(sed -n 2p "$f")
+  [[ $running == *" $sid "* ]] && continue
+  if [ ! -d "$dir" ] || [ ! -f "$tp" ]; then rm -f "$f"; continue; fi   # folder or conversation gone
+  tabs+=("$(ws_rel "$dir")|$dir|$sid")
+done
+[ ${#tabs[@]} -gt 0 ] || [ "$running" != " " ] || tabs=("$ws_name|$ws|")
+
+if [ "${1:-}" = list ]; then
+  for t in "${tabs[@]}"; do IFS='|' read -r n d s <<<"$t"; echo "$n  ${s:-(new session)}"; done
+  exit 0
+fi
+[ -z "${1:-}" ] || { sed -n '6,7s/^# //p' "$0" >&2; exit 2; }
+
+if [ ${#tabs[@]} -gt 0 ]; then
+  # The first tab is the window's own (-e), the others come from a tabs file (else Konsole adds a plain shell tab)
+  IFS='|' read -r n d s <<<"${tabs[0]}"
+  args=(--workdir "$d")
+  if [ ${#tabs[@]} -gt 1 ]; then
+    list="$HOME/.cache/claude/cockpit-tabs"
+    for t in "${tabs[@]:1}"; do
+      IFS='|' read -r n2 d2 s2 <<<"$t"
+      echo "title: $n2;; workdir: $d2;; command: $here/cockpit tab $s2"
+    done > "$list"
+    args+=(--tabs-from-file "$list")
+  fi
+  setsid konsole "${args[@]}" -e "$here/cockpit" tab $s </dev/null >/dev/null 2>&1 &
+fi
+"$here/cockpit-web" open --new

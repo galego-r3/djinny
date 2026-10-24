@@ -11,6 +11,9 @@
 # relative to the workspace, "." for the root). It's versioned with the workspace, so it survives restarts and
 # moves to other machines, and stays until the user writes in that project (any session there that isn't
 # running elsewhere) or dismisses it on the dashboard.
+# Every workspace session is also listed in ~/.cache/claude/open/<session_id> (start folder, transcript), so
+# `cockpit` can reopen it after Konsole or the machine went down; only leaving it (/exit, /clear, logout)
+# removes it.
 . "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
 dir="$HOME/.cache/claude/sessions"
 qdir="$ws/.cockpit/questions"
@@ -22,7 +25,12 @@ event=$(jq -r '.hook_event_name // empty' <<<"$in")
 f="$dir/$sid.json"
 cwd=$(jq -r '.cwd // empty' <<<"$in")
 
-if [ "$event" = SessionEnd ]; then rm -f "$f"; presence; exit 0; fi
+odir="$HOME/.cache/claude/open"
+if [ "$event" = SessionEnd ]; then
+  rm -f "$f"
+  case "$(jq -r '.reason // empty' <<<"$in")" in prompt_input_exit|clear|logout) rm -f "$odir/$sid" ;; esac
+  presence; exit 0
+fi
 
 # PID of the claude process that runs this hook (first "claude" ancestor)
 pid=$PPID
@@ -34,6 +42,9 @@ done
 # The project is where the session was started (Claude Code's registry), not where it has cd'ed to since
 start=$(jq -r '.cwd // empty' "$HOME/.claude/sessions/$pid.json" 2>/dev/null); [ -n "$start" ] || start=$cwd
 case "$start" in "$ws") rel=. ;; "$ws"/*) rel=${start#"$ws"/} ;; *) rel= ;; esac
+if [ -n "$rel" ] && [ ! -f "$odir/$sid" ]; then
+  mkdir -p "$odir"; printf '%s\n%s\n' "$start" "$(jq -r '.transcript_path // empty' <<<"$in")" > "$odir/$sid"
+fi
 
 watch=$(jq -r '.watch // false' "$f" 2>/dev/null || echo false)
 case "$event" in
