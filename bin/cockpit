@@ -14,7 +14,9 @@ odir="$HOME/.cache/claude/open"
 
 if [ "${1:-}" = tab ]; then   # inside a new tab: resume the session (or start one); a shell stays if claude fails
   shift
-  exec bash -ic 'claude ${1:+--resume "$1"} || exec bash -i' bash "${1:-}"
+  # cockpit.json "remote_control": true starts the root session with Remote Control on, named after the workspace
+  rc=; [ "$PWD" = "$ws" ] && [ "$(jq -r '.remote_control // false' "$conf" 2>/dev/null)" = true ] && rc=$ws_name
+  exec bash -ic 'claude ${1:+--resume "$1"} ${2:+--remote-control "$2"} || exec bash -i' bash "${1:-}" "$rc"
 fi
 
 # Running sessions (their claude process is alive), from the dashboard's live state files
@@ -39,7 +41,7 @@ if [ "${1:-}" = list ]; then
   for t in "${tabs[@]}"; do IFS='|' read -r n d s <<<"$t"; echo "$n  ${s:-(new session)}"; done
   exit 0
 fi
-[ -z "${1:-}" ] || { sed -n '5,6s/^# //p' "$0" >&2; exit 2; }
+[ -z "${1:-}" ] || { sed -n '8,9s/^# //p' "$0" >&2; exit 2; }
 
 if [ ${#tabs[@]} -gt 0 ]; then
   # The first tab is the window's own (-e), the others come from a tabs file (else Konsole adds a plain shell tab)

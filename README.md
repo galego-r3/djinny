@@ -23,7 +23,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   group under Konsole. Clicking a project raises the window holding its tab (KWin script, `lib/kwin-activate`).
 - **Start** (`cockpit`): opens a Konsole window with a tab for every workspace session that was open before
   (resumed with `claude --resume`; Konsole closed or the machine went down) and the dashboard (web or window). Leaving a session
-  (`/exit`, `/clear`) takes it off the list; `cockpit list` shows what it would reopen.
+  (`/exit`, `/clear`) takes it off the list; `cockpit list` shows what it would reopen. With `"remote_control": true` in `cockpit.json`, the root
+  session starts with Remote Control on, named after the workspace (reachable from the Claude apps).
 - **Tabs**: each session is named after its folder (at most two levels deep, like the dashboard rows) and gets its tab title and colour automatically. Tabs
   are kept sorted: DASH, the root, projects A–Z, unnamed tabs last. Leaving `claude` closes its tab.
 - **Status line**: model, context use, rate limits (▲ = used faster than the window passes), estimated
