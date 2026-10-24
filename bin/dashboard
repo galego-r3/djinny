@@ -420,8 +420,8 @@ def header(limits, n_active, n_todo):
         else:
             head += f"  {label} rolling"
     # Tab bar, old-school tabs: a category in its colour, the others grey (the current one in the header colour).
-    # Half a row of padding above the labels; under them a rule in the current tab's colour. Wraps into more rows
-    # of tabs when too wide; the current tab's row is the lowest.
+    # Half a row of padding above and below the labels; the lowest row's bottom padding sits on a half-row rule in
+    # the current tab's colour. Wraps into more rows of tabs when too wide; the current tab's row is the lowest.
     W = shutil.get_terminal_size((120, 40)).columns
     cur = CATCOL.get(VIEW[0]) or '#7EC8F7'
     rows_, row, col_ = [], [], 2
@@ -433,21 +433,29 @@ def header(limits, n_active, n_todo):
         row.append((name, label, col_)); col_ += len(label) + 1
     rows_.append(row)
     rows_.sort(key=lambda r: any(name == VIEW[0] for name, *_ in r))
+    # Half blocks: reverse video shows the terminal's background in the upper half, so the padding joins the filled
+    # label cells without a seam
+    up = lambda c, n: f"\x1b[7m{esc(c)}\x1b[49m{'▀' * n}{RST}"   # upper half background, lower half c
+    color = lambda name: cur if name == VIEW[0] else CATCOL.get(name) or '#3A3F47'
+    def bottom(row, rule):   # the labels' bottom padding; on the lowest row, on top of the rule
+        out, col = "", 1
+        for name, label, c0 in row:
+            out += (up(rule, c0 - col) if rule else " " * (c0 - col)) \
+                + f"{esc(color(name))}{esc(rule, bg=True) if rule else ''}{'▀' * len(label)}{RST}"
+            col = c0 + len(label)
+        return out + (up(rule, W - col + 1) if rule else "")
     TABS.clear()
     lines = []
-    for row in rows_:
+    for i, row in enumerate(rows_):
         top, mid = " ", " "
         for name, label, c0 in row:
-            sel = name == VIEW[0]
-            c = cur if sel else CATCOL.get(name) or '#3A3F47'
+            c = color(name)
             fg = '#101820' if sum(rgb(c)) > 380 else '#FFFFFF' if c != '#3A3F47' else '#C8CCD2'
-            # padding: the lower half filled as background, so it joins the label row without a seam (reverse
-            # video shows the terminal's own background in the upper half)
-            top += f"\x1b[7m{esc(c)}\x1b[49m{'▀' * len(label)}{RST} "
-            mid += (BOLD if sel else "") + f"{esc(c, bg=True)}{esc(fg)}{label}{RST} "
-            for dy in (0, 1): TABS.append((2 + len(lines) + dy, c0, c0 + len(label) - 1, name))
-        lines += [top, mid]
-    rule = f"{esc(cur)}{'▀' * W}{RST}"
+            top += f"{up(c, len(label))} "
+            mid += (BOLD if name == VIEW[0] else "") + f"{esc(c, bg=True)}{esc(fg)}{label}{RST} "
+            for dy in (0, 1, 2): TABS.append((2 + len(lines) + dy, c0, c0 + len(label) - 1, name))
+        lines += [top, mid, bottom(row, cur if i == len(rows_) - 1 else None)]
+    rule = lines.pop()
     return [head + RST, *lines, rule]
 
 def todo_frame(head, W, H, colors):
