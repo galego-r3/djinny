@@ -16,8 +16,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   `/api/open`, `/api/dismiss`, `/api/tick`, see `bin/cockpit-web`) is meant for other clients too.
 - **Own window and taskbar icon**: with `"dashboard": "window"` in `cockpit.json`, the dashboard runs in a
   Konsole window of its own (`dashboard --window`; opened on session start if closed). `install.sh` adds two
-  launchers to pin to the taskbar, each with its own icon: **Claude** (`cockpit`, the sessions' window) and
-  **Claude dashboard**. Konsole's `--desktopfile` gives their windows their own Wayland app id, so they don't
+  launchers to pin to the taskbar, each with its own icon, named after the workspace (`name` in `cockpit.json`,
+  else "Claude"): **<name>** (`cockpit`, the sessions' window) and **<name> dashboard**. Konsole's `--desktopfile` gives their windows their own Wayland app id, so they don't
   group under Konsole. Clicking a project raises the window holding its tab (KWin script, `lib/kwin-activate`).
 - **Start** (`cockpit`): opens a Konsole window with a tab for every workspace session that was open before
   (resumed with `claude --resume`; Konsole closed or the machine went down) and the dashboard (web or window). Leaving a session

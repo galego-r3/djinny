@@ -65,8 +65,9 @@ desktop() {   # file name, Name, Comment, Exec
   printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=%s\nIcon=%s\nStartupWMClass=%s\nTerminal=false\nCategories=Development;\n' \
     "$2" "$3" "$4" "$1" "$1" > ~/.local/share/applications/"$1".desktop
 }
-desktop claude-cockpit "Claude" "Claude Code sessions of the workspace (reopens the ones open before)" "$HOME/.local/bin/cockpit"
-desktop claude-dashboard "Claude dashboard" "Live view of every project" "$HOME/.local/bin/dashboard --window"
+label=$(jq -r '.name // empty' "$ws/cockpit.json" 2>/dev/null); label=${label:-Claude}   # launcher names: the workspace's name
+desktop claude-cockpit "$label" "Claude Code sessions of the workspace (reopens the ones open before)" "$HOME/.local/bin/cockpit"
+desktop claude-dashboard "$label dashboard" "Live view of every project" "$HOME/.local/bin/dashboard --window"
 command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true
 "$here/lib/konsole-color" --profiles '#FF0096'   # tab colour profiles (Konsole without setTabColor); #FF0096 = dashboard
 
