@@ -16,7 +16,7 @@ Only on 127.0.0.1. API (also meant for other clients, e.g. a phone app through a
 POSTs need the header "X-Cockpit: 1" and every request a localhost Host header, so other web pages
 can't use the API (no cross-site form posts, no DNS rebinding).
 """
-import importlib.machinery, json, os, subprocess, sys, threading, time, webbrowser
+import importlib.machinery, json, os, sys, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -26,23 +26,6 @@ PORT = int(dash.CONF.get("web_port", 8765))
 HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 LOCK = threading.Lock()          # the dashboard module keeps state in globals
 LAST_POLL = [0.0]                # when a page last asked for /api/state
-
-def konsole():
-    """Point the dashboard's Konsole calls at a Konsole window: the one holding the workspace root's tab,
-    else any. The service runs outside Konsole, so it has no KONSOLE_DBUS_* of its own."""
-    names = subprocess.run(["qdbus6"], capture_output=True, text=True).stdout.split()
-    best = None
-    for svc in (n for n in names if n.startswith("org.kde.konsole")):
-        for win in subprocess.run(["qdbus6", svc], capture_output=True, text=True).stdout.split():
-            if not win.startswith("/Windows/") or win.count("/") != 2: continue
-            os.environ["KONSOLE_DBUS_SERVICE"] = svc
-            best = best or (svc, win)
-            if any(dash.qdbus(f"/Sessions/{s}", "tabTitleFormat", "0") == dash.NAME
-                   for s in (dash.qdbus(win, "sessionList") or "").split()):
-                best = (svc, win); break
-    if best:
-        os.environ["KONSOLE_DBUS_SERVICE"], os.environ["KONSOLE_DBUS_WINDOW"] = best
-    return bool(best)
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -75,7 +58,6 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError: return self.send(400, {"error": "bad json"})
         with LOCK:
             if self.path == "/api/open":
-                if not konsole(): return self.send(503, {"error": "no Konsole window"})
                 dash.snapshot()                               # fresh ORPHANS / ASKING for that row
                 dash.goto_project(str(body.get("project", "")))
             elif self.path == "/api/dismiss":

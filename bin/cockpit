@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Start the cockpit: a new Konsole window with a tab for every workspace session that was open before
-# (resumed with claude --resume; recorded by hooks/session-state.sh in ~/.cache/claude/open/), and the web
-# dashboard in the browser. Sessions still running are skipped; with none to reopen, the root session starts.
+# (resumed with claude --resume; recorded by hooks/session-state.sh in ~/.cache/claude/open/), and the
+# dashboard: with "dashboard": "web" in cockpit.json in the browser, with "window" in a window of its own
+# (dashboard --window), else as a tab (session-name.sh). The window has its own taskbar icon (desktop file
+# claude-cockpit, installed by install.sh). Sessions still running are skipped; with none to reopen, the root
+# session starts.
 #   cockpit          start it
 #   cockpit list     show what it would reopen
 set -euo pipefail
@@ -41,7 +44,7 @@ fi
 if [ ${#tabs[@]} -gt 0 ]; then
   # The first tab is the window's own (-e), the others come from a tabs file (else Konsole adds a plain shell tab)
   IFS='|' read -r n d s <<<"${tabs[0]}"
-  args=(--workdir "$d")
+  args=(--separate --desktopfile claude-cockpit --workdir "$d")
   if [ ${#tabs[@]} -gt 1 ]; then
     list="$HOME/.cache/claude/cockpit-tabs"
     for t in "${tabs[@]:1}"; do
@@ -52,4 +55,7 @@ if [ ${#tabs[@]} -gt 0 ]; then
   fi
   setsid konsole "${args[@]}" -e "$here/cockpit" tab $s </dev/null >/dev/null 2>&1 &
 fi
-"$here/cockpit-web" open --new
+case "$(jq -r '.dashboard // "terminal"' "$conf" 2>/dev/null)" in
+  web) "$here/cockpit-web" open --new ;;
+  window) "$here/dashboard" --window --if-closed ;;
+esac

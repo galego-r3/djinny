@@ -14,8 +14,13 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   starting `claude` opens the page instead of a DASH tab (unless one is open), and `dashboard` opens it too
   (`dashboard --tui` for the terminal one). Its JSON API (`/api/state`,
   `/api/open`, `/api/dismiss`, `/api/tick`, see `bin/cockpit-web`) is meant for other clients too.
+- **Own window and taskbar icon**: with `"dashboard": "window"` in `cockpit.json`, the dashboard runs in a
+  Konsole window of its own (`dashboard --window`; opened on session start if closed). `install.sh` adds two
+  launchers to pin to the taskbar, each with its own icon: **Claude** (`cockpit`, the sessions' window) and
+  **Claude dashboard**. Konsole's `--desktopfile` gives their windows their own Wayland app id, so they don't
+  group under Konsole. Clicking a project raises the window holding its tab (KWin script, `lib/kwin-activate`).
 - **Start** (`cockpit`): opens a Konsole window with a tab for every workspace session that was open before
-  (resumed with `claude --resume`; Konsole closed or the machine went down) and the web dashboard. Leaving a session
+  (resumed with `claude --resume`; Konsole closed or the machine went down) and the dashboard (web or window). Leaving a session
   (`/exit`, `/clear`) takes it off the list; `cockpit list` shows what it would reopen.
 - **Tabs**: each session is named after its folder (at most two levels deep, like the dashboard rows) and gets its tab title and colour automatically. Tabs
   are kept sorted: DASH, the root, projects A–Z, unnamed tabs last. Leaving `claude` closes its tab.
@@ -52,6 +57,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `bin/claude-jobs` | job runner |
 | `bin/cockpit-web`, `web/index.html` | the web dashboard: local server (stdlib, reuses `bin/dashboard`'s `snapshot()`) and its page; `systemd/cockpit-web.service` |
 | `bin/cockpit` | start command: reopens the sessions listed in `~/.cache/claude/open/` (written by `hooks/session-state.sh`) in a new Konsole window, opens the web dashboard |
+| `lib/kwin-activate` | raises a window by pid via a one-off KWin script (Wayland) |
+| `icons/` | launcher icons (`claude-cockpit`, `claude-dashboard`) |
 | `bin/tab-color` | set a project's tab colour in `cockpit.json` and apply it to the tab |
 | `bin/secret` | short form of `secret-tool`: `secret set/get/del <service> [attr value]…`, `push`/`pull` to 1Password |
 | `hooks/session-name.sh` | SessionStart hook: session/tab name, tab colour, tab sorting, opens the dashboard tab if the window has none |

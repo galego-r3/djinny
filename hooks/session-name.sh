@@ -4,7 +4,8 @@
 # (e.g. "fun/chess"; the root itself is the workspace's name), colour the Konsole tab from the
 # workspace's cockpit.json, open the dashboard on a fresh start (unless cockpit.json has
 # "dashboard_autostart": false): with "dashboard": "web" the web page (cockpit-web open, if none is open),
-# else in a new tab if the window has none; and re-sort the window's tabs.
+# with "window" its own window (dashboard --window --if-closed), else in a new tab if the window has none;
+# and re-sort the window's tabs.
 . "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
 input=$(cat)
 name=$(ws_rel "$(jq -r '.cwd // empty' <<<"$input")")
@@ -24,8 +25,11 @@ if [ -n "$KONSOLE_DBUS_SERVICE" ] && [ -n "$KONSOLE_DBUS_SESSION" ]; then
   m="$HOME/.cache/claude/dashstart"; win=${KONSOLE_DBUS_WINDOW:-}
   fresh=; [ "$(jq -r '.source // "startup"' <<<"$input")" = startup ] \
      && [ "$(jq -r '.dashboard_autostart // true' "$conf" 2>/dev/null)" != false ] && fresh=1
-  if [ -n "$fresh" ] && [ "$(jq -r '.dashboard // "terminal"' "$conf" 2>/dev/null)" = web ]; then
+  mode=$(jq -r '.dashboard // "terminal"' "$conf" 2>/dev/null)
+  if [ -n "$fresh" ] && [ "$mode" = web ]; then
     setsid "$(dirname "$(readlink -f "$0")")/../bin/cockpit-web" open </dev/null >/dev/null 2>&1 &
+  elif [ -n "$fresh" ] && [ "$mode" = window ]; then
+    setsid "$(dirname "$(readlink -f "$0")")/../bin/dashboard" --window --if-closed </dev/null >/dev/null 2>&1 &
   elif [ -n "$win" ] && [ -n "$fresh" ] \
      && ! { [ -f "$m" ] && [ $(( $(date +%s) - $(stat -c %Y "$m") )) -lt 15 ]; }; then
     has_dash=

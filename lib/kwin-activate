@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Raise and focus a window of a process: kwin-activate <pid> [<desktop file name>]. Works on Wayland, where
+# a program can't raise another one's window itself: a one-off KWin script does it (Plasma 6). With a desktop
+# file name, a window of that app (any process) also matches. Exit 1 when KWin isn't reachable.
+pid=${1:?usage: kwin-activate <pid> [<desktop file name>]}; app=${2:-}
+[[ $pid =~ ^[0-9]+$ ]] || exit 2
+[[ $app =~ ^[A-Za-z0-9._-]*$ ]] || exit 2
+js="$HOME/.cache/claude/kwin-activate.$$.js"; name="cockpit-activate-$$"
+mkdir -p "${js%/*}"
+cat > "$js" <<JS
+for (const w of workspace.windowList())
+  if (w.normalWindow && (w.pid === $pid || ("$app" && w.desktopFileName === "$app"))) {
+    if (w.minimized) w.minimized = false;
+    workspace.activeWindow = w; break;
+  }
+JS
+q() { qdbus6 org.kde.KWin "$@" >/dev/null 2>&1; }
+id=$(qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$js" "$name" 2>/dev/null)
+rc=1
+[[ $id =~ ^[0-9]+$ ]] && q "/Scripting/Script$id" org.kde.kwin.Script.run && rc=0
+q /Scripting org.kde.kwin.Scripting.unloadScript "$name"
+rm -f "$js"
+exit $rc

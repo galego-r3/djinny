@@ -7,6 +7,7 @@
 # - installs and starts the systemd user timer claude-jobs.timer and the service cockpit-web.service
 #   (restarted, so it runs the current code)
 # - sources shell/bashrc.sh from ~/.bashrc
+# - adds the launchers claude-cockpit and claude-dashboard (desktop files + icons; pin them to the taskbar)
 # - remembers the workspace in ~/.config/claude-cockpit/workspace
 # - rules: if <workspace>/rules/ is missing, asks whether to use the shared ruleset (clone of $CLAUDE_RULES_REPO)
 #   or start your own (its cockpit.md plus an empty RULES.md, new git repo); answer ahead with
@@ -57,6 +58,16 @@ fi
 for f in "$here"/bin/*; do ln -sfn "$f" ~/.local/bin/"$(basename "$f")"; done
 for f in session-name.sh session-state.sh sort-tabs.sh cockpit-pull.sh repo-pull.sh; do ln -sfn "$here/hooks/$f" ~/.claude/hooks/$f; done
 ln -sfn "$here/hooks/statusline.sh" ~/.claude/statusline.sh
+# launchers with their own taskbar icons (the windows' Wayland app id = desktop file name): the sessions and the dashboard
+mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps
+for app in claude-cockpit claude-dashboard; do ln -sfn "$here/icons/$app.svg" ~/.local/share/icons/hicolor/scalable/apps/$app.svg; done
+desktop() {   # file name, Name, Comment, Exec
+  printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=%s\nIcon=%s\nStartupWMClass=%s\nTerminal=false\nCategories=Development;\n' \
+    "$2" "$3" "$4" "$1" "$1" > ~/.local/share/applications/"$1".desktop
+}
+desktop claude-cockpit "Claude" "Claude Code sessions of the workspace (reopens the ones open before)" "$HOME/.local/bin/cockpit"
+desktop claude-dashboard "Claude dashboard" "Live view of every project" "$HOME/.local/bin/dashboard --window"
+command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true
 "$here/lib/konsole-color" --profiles '#FF0096'   # tab colour profiles (Konsole without setTabColor); #FF0096 = dashboard
 
 # settings.json: one hook entry per event, added only if no entry runs that command yet
