@@ -3,14 +3,17 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { LogEntry } from '../types'
 
-// Side pane: the open "❓ Your turn" block of the last reply, the project's open to-dos (cockpit.json "todo_file",
-// section "## <project>"), the project's Status: line, and one log line per turn: its topic in a few words
-// (summarised by a small model; until it answers, or if it fails, the start of the prompt)
+// Side pane: the open "❓ Your turn" block of the last reply, each action spelled out from the whole reply by a small
+// model (what to do, where, why; the bare block until it answers), the project's open to-dos with their detail lines
+// (cockpit.json "todo_file", section "## <project>"), the project's Status: line, and one log line per turn: its
+// topic in a few words (summarised by a small model; until it answers, or if it fails, the start of the prompt).
+// The log gets only the rows left over.
 const PANE = 'worklog'
 const TITLE = 'Work log'
 const MARKER = '❓ **Your turn:**'
 const status = atom({ plugin: 'worklog', key: 'status' } as const, '')
 const question = atom({ plugin: 'worklog', key: 'question' } as const, '')
+const detail = atom({ plugin: 'worklog', key: 'detail' } as const, '')
 const todos = atom({ plugin: 'worklog', key: 'todos' } as const, [] as string[])
 const log = atom({ plugin: 'worklog', key: 'log' } as const, [] as LogEntry[])
 const prompts = new Map<string, string>()   // turn id -> what was asked
@@ -33,6 +36,20 @@ async function topicOf($: EngineInterface, asked: string, reply: string) {
     prompt: `Request:\n${oneLine(asked, 600)}\n\nReply:\n${oneLine(reply.split(MARKER)[0], 800)}`,
   })
   return r.isAnswered ? oneLine(r.text.split('\n')[0].replace(/^["'„]|["'“]$|\.$/g, ''), 70) : undefined
+}
+
+// The "Your turn" actions of a reply spelled out, so they can be done without scrolling up; undefined if no answer
+async function detailOf($: EngineInterface, asked: string, reply: string, block: string) {
+  const r = await $.model.complete({
+    model: 'haiku', maxTokens: 600,
+    system: 'You turn the "Your turn" actions at the end of an assistant reply into a self-contained to-do for the ' +
+      'user, who will not reread the chat. For each action: one line "• <action>", then 1–3 lines starting with ' +
+      'two spaces: exactly what to do, where (which session, tab, app, site, file, command) and why, with any ' +
+      'names, commands, paths, URLs, dates or values from the reply. Use only facts from the request and reply. ' +
+      'Plain text, no markdown, no intro, same language as the block.',
+    prompt: `Request:\n${oneLine(asked, 1500)}\n\nReply:\n${reply.slice(0, 6000)}\n\nYour-turn block:\n${block}`,
+  })
+  return r.isAnswered ? plain(r.text).trim() : undefined
 }
 
 // The Status: line of the nearest CLAUDE.md, from the working directory up
@@ -62,12 +79,16 @@ async function readTodos($: EngineInterface, cwd: string) {
     : cwd.slice(ws.length + 1).split('/').slice(0, conf.depth ?? 2).join('/')
   let text = ''
   try { text = await $.fs.read(`${ws}/${conf.todo_file}`) } catch { return [] }
+  // An item: its line without the date, plus its indented detail lines
   const items: string[] = []
-  let inside = false
+  let inside = false, open = false
   for (const line of text.split('\n')) {
-    if (line.startsWith('## ')) inside = line.slice(3).split(' — ')[0].trim() === rel
-    else if (inside && line.startsWith('- [ ]'))
-      items.push(oneLine(line.slice(5).replace(/\s*\(added \d{4}-\d{2}-\d{2}\)/, '').replace(/\s*→.*$/, '').replace(/^[\s—]+|[\s—]+$/g, ''), 200))
+    if (line.startsWith('## ')) { inside = line.slice(3).split(' — ')[0].trim() === rel; open = false }
+    else if (inside && line.startsWith('- [ ]')) {
+      items.push(oneLine(line.slice(5).replace(/\s*\(added \d{4}-\d{2}-\d{2}\)/, '').replace(/^[\s—]+|[\s—]+$/g, ''), 400))
+      open = true
+    } else if (inside && open && /^\s+\S/.test(line)) items[items.length - 1] += '\n  ' + oneLine(line.replace(/^\s*[-*]\s*/, ''), 300)
+    else open = false
   }
   return items
 }
@@ -101,9 +122,13 @@ export const register: Register = on => {
     if (e.agentId !== undefined) return done
     const text = done.text ?? ''
     const i = text.indexOf(MARKER)
-    await update($, question, () => (i >= 0 ? plain(text.slice(i + MARKER.length)).trim() : ''))
+    const block = i >= 0 ? plain(text.slice(i + MARKER.length)).trim() : ''
+    await update($, question, () => block)
+    await update($, detail, () => '')
     const asked = prompts.get(e.turnId) ?? ''
     prompts.delete(e.turnId)
+    if (block) void detailOf($, asked, text, block).then(d => d && read($, question).then(q =>
+      q === block ? update($, detail, () => d) : undefined)).catch(() => {})
     const did = e.reason === 'answer' ? firstSentence(text) : e.reason
     if (asked || did) {
       const time = hhmm()
@@ -118,20 +143,25 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const st = await read($, status)
-    const q = await read($, question)
+    const q = (await read($, detail)) || (await read($, question))
     const td = await read($, todos)
     const entries = await read($, log)
     const qLines = q ? q.split('\n').filter(l => l.trim()) : []
-    const room = Math.max(1, (e.viewport?.rows ?? 30) - 11 - qLines.length - td.length - 2)
+    const tLines = td.flatMap(t => t.split('\n'))
+    // Rows the wrapped texts take; the log gets what's left
+    const width = Math.max(10, (e.viewport?.columns ?? 40) - 2)
+    const rows = (ls: string[]) => ls.reduce((n, l) => n + Math.max(1, Math.ceil(l.length / width)), 0)
+    const used = 8 + rows(qLines.length ? qLines : ['-']) + rows(tLines.length ? tLines.map(l => '• ' + l) : ['-']) + rows([st || '—'])
+    const room = Math.max(1, (e.viewport?.rows ?? 30) - used)
     return (
       <Box flexDirection="column">
         <Text bold color="red">❓ Your turn</Text>
         {qLines.length === 0 ? <Text dimColor>nothing open</Text>
-          : qLines.map(l => <Text wrap="wrap">{l}</Text>)}
+          : qLines.map(l => l.startsWith('  ') ? <Text wrap="wrap">{l}</Text> : <Text wrap="wrap" bold>{l}</Text>)}
         <Text> </Text>
         <Text bold color="magenta">☐ To-dos</Text>
         {td.length === 0 ? <Text dimColor>none</Text>
-          : td.map(t => <Text wrap="wrap">• {t}</Text>)}
+          : tLines.map(l => l.startsWith('  ') ? <Text wrap="wrap">{l}</Text> : <Text wrap="wrap">• {l}</Text>)}
         <Text> </Text>
         <Text bold color="cyan">Status</Text>
         <Text wrap="wrap">{st || '—'}</Text>
