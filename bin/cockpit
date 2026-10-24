@@ -4,7 +4,6 @@
 # dashboard in the browser. Sessions still running are skipped; with none to reopen, the root session starts.
 #   cockpit          start it
 #   cockpit list     show what it would reopen
-# install.sh also links it under cockpit.json "command" (e.g. the root's name), if set.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 . "$here/../lib/env.sh"
@@ -37,7 +36,7 @@ if [ "${1:-}" = list ]; then
   for t in "${tabs[@]}"; do IFS='|' read -r n d s <<<"$t"; echo "$n  ${s:-(new session)}"; done
   exit 0
 fi
-[ -z "${1:-}" ] || { sed -n '6,7s/^# //p' "$0" >&2; exit 2; }
+[ -z "${1:-}" ] || { sed -n '5,6s/^# //p' "$0" >&2; exit 2; }
 
 if [ ${#tabs[@]} -gt 0 ]; then
   # The first tab is the window's own (-e), the others come from a tabs file (else Konsole adds a plain shell tab)
