@@ -420,8 +420,8 @@ def header(limits, n_active, n_todo):
         else:
             head += f"  {label} rolling"
     # Tab bar, old-school tabs: a category in its colour, the others grey (the current one in the header colour).
-    # Under them a rule in the current tab's colour, open under the current tab. Wraps into more rows of tabs
-    # when too wide; the current tab's row is the lowest.
+    # Half a row of padding above the labels; under them a rule in the current tab's colour. Wraps into more rows
+    # of tabs when too wide; the current tab's row is the lowest.
     W = shutil.get_terminal_size((120, 40)).columns
     cur = CATCOL.get(VIEW[0]) or '#7EC8F7'
     rows_, row, col_ = [], [], 2
@@ -436,16 +436,18 @@ def header(limits, n_active, n_todo):
     TABS.clear()
     lines = []
     for row in rows_:
-        mid = " "
+        top, mid = " ", " "
         for name, label, c0 in row:
             sel = name == VIEW[0]
             c = cur if sel else CATCOL.get(name) or '#3A3F47'
             fg = '#101820' if sum(rgb(c)) > 380 else '#FFFFFF' if c != '#3A3F47' else '#C8CCD2'
+            # padding: the lower half filled as background, so it joins the label row without a seam (reverse
+            # video shows the terminal's own background in the upper half)
+            top += f"\x1b[7m{esc(c)}\x1b[49m{'▀' * len(label)}{RST} "
             mid += (BOLD if sel else "") + f"{esc(c, bg=True)}{esc(fg)}{label}{RST} "
-            TABS.append((2 + len(lines), c0, c0 + len(label) - 1, name))
-        lines.append(mid)
-    c0, w = next(((c0, len(label)) for name, label, c0 in rows_[-1] if name == VIEW[0]), (0, 0))
-    rule = f"{esc(cur)}{'▀' * (c0 - 1)}{' ' * w}{'▀' * max(0, W - c0 - w + 1)}{RST}" if w else f"{esc(cur)}{'▀' * W}{RST}"
+            for dy in (0, 1): TABS.append((2 + len(lines) + dy, c0, c0 + len(label) - 1, name))
+        lines += [top, mid]
+    rule = f"{esc(cur)}{'▀' * W}{RST}"
     return [head + RST, *lines, rule]
 
 def todo_frame(head, W, H, colors):
