@@ -617,12 +617,9 @@ def frame():
             rstate, host = remote[rel]
             label = cut(f"@{host}", STATEW - 1); width = len(label)
             lcol = esc(STATES[rstate]) if rstate in STATES else DIM
-        if state == "question":                      # shown as "❓" (2 columns wide), with its dismiss key
+        if state == "question":                      # shown as "❓" (2 columns wide); keys 1-9 dismiss in row order
             label, width = "❓", 2
-            if len(DISMISS) < 9:
-                key = str(len(DISMISS) + 1)
-                DISMISS[key] = qfiles.get(rel, [])
-                label, width = f"❓ key {key}", 8      # the dismiss key, not a count
+            if len(DISMISS) < 9: DISMISS[str(len(DISMISS) + 1)] = qfiles.get(rel, [])
         u = usage.get(rel, [0, 0, 0])
         tot = [a + b for a, b in zip(tot, u)]
         nums = " ".join(f"{heat(n, i)}{human(n):>{NUMW}}{RST}" for i, n in enumerate(u))
@@ -642,7 +639,7 @@ def frame():
     nums = " ".join(f"{human(n):>{NUMW}}" for n in tot)
     out.append(f"   {BOLD}{'total':<{namew}}{RST}  {'':<{STATEW}}"
                f"{DIM}{cut('tokens, all machines = input + cache writes + output', statw):<{statw}}{RST}  {' ' * actcol}{BOLD}{nums}{RST}")
-    out.append(f"{DIM}{more}q to quit · Tab/Shift+Tab switch tabs · click a name to go to its tab · 1-9 dismisses that ❓ · refreshes every {REFRESH}s{RST}")
+    out.append(f"{DIM}{more}q to quit · Tab/Shift+Tab switch tabs · click a name to go to its tab · refreshes every {REFRESH}s{RST}")
     return out
 
 # --- main loop ---------------------------------------------------------------------------------
