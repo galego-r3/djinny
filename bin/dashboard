@@ -420,8 +420,8 @@ def header(limits, n_active, n_todo):
         else:
             head += f"  {label} rolling"
     # Tab bar, old-school tabs: a category in its colour, the others grey (the current one in the header colour).
-    # Two rows per tab, the others a half row lower; under them a rule in the current tab's colour that the
-    # current tab runs into. Wraps into more rows of tabs when too wide; the current tab's row is the lowest.
+    # Under them a rule in the current tab's colour, open under the current tab. Wraps into more rows of tabs
+    # when too wide; the current tab's row is the lowest.
     W = shutil.get_terminal_size((120, 40)).columns
     cur = CATCOL.get(VIEW[0]) or '#7EC8F7'
     rows_, row, col_ = [], [], 2
@@ -432,23 +432,20 @@ def header(limits, n_active, n_todo):
             rows_.append(row); row, col_ = [], 2
         row.append((name, label, col_)); col_ += len(label) + 1
     rows_.append(row)
-    rows_.sort(key=lambda r: any(name == VIEW[0] for name, *_ in r))   # the current tab's row next to the rule
+    rows_.sort(key=lambda r: any(name == VIEW[0] for name, *_ in r))
     TABS.clear()
     lines = []
     for row in rows_:
-        top, mid = " ", " "
+        mid = " "
         for name, label, c0 in row:
             sel = name == VIEW[0]
             c = cur if sel else CATCOL.get(name) or '#3A3F47'
             fg = '#101820' if sum(rgb(c)) > 380 else '#FFFFFF' if c != '#3A3F47' else '#C8CCD2'
-            top += (f"{esc(c, bg=True)}{' ' * len(label)}" if sel else f"{esc(c)}{'▄' * len(label)}") + f"{RST} "
             mid += (BOLD if sel else "") + f"{esc(c, bg=True)}{esc(fg)}{label}{RST} "
-            for dy in (0, 1): TABS.append((2 + len(lines) + dy, c0, c0 + len(label) - 1, name))
-        lines += [top, mid]
-    sel = next((c0, len(label)) for name, label, c0 in rows_[-1] + [(VIEW[0], "", 0)] if name == VIEW[0])
-    c0, w = sel if sel[1] else (0, 0)
-    rule = f"{esc(cur)}{'▀' * (c0 - 1)}{RST}{esc(cur, bg=True)}{' ' * w}{RST}{esc(cur)}{'▀' * max(0, W - c0 + 1 - w)}{RST}" \
-        if w else f"{esc(cur)}{'▀' * W}{RST}"
+            TABS.append((2 + len(lines), c0, c0 + len(label) - 1, name))
+        lines.append(mid)
+    c0, w = next(((c0, len(label)) for name, label, c0 in rows_[-1] if name == VIEW[0]), (0, 0))
+    rule = f"{esc(cur)}{'▀' * (c0 - 1)}{' ' * w}{'▀' * max(0, W - c0 - w + 1)}{RST}" if w else f"{esc(cur)}{'▀' * W}{RST}"
     return [head + RST, *lines, rule]
 
 def todo_frame(head, W, H, colors):
