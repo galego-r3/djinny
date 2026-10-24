@@ -49,7 +49,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   minute behind.
 - **Updates**: every prompt pulls the cockpit in the background, so a change pushed from another machine
   arrives without doing anything; the next prompt says what came in.
-- **Rules**: not in here. They're a separate repo in `<workspace>/rules/` ([claude-rules](https://github.com/stemiwe/claude-rules));
+- **Rules**: not in here. They're a separate repo in `<workspace>/rules/` (another folder: `"rules": "<folder>"` in `cockpit.json`) ([claude-rules](https://github.com/stemiwe/claude-rules));
   `install.sh` asks whether to use the shared ruleset or start your own, and the workspace's `CLAUDE.md` loads it.
 
 ## Layout
