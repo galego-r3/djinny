@@ -7,7 +7,8 @@
 # - installs and starts the systemd user timer claude-jobs.timer and the service cockpit-web.service
 #   (restarted, so it runs the current code)
 # - sources shell/bashrc.sh from ~/.bashrc
-# - adds the launchers claude-cockpit and claude-dashboard (desktop files + icons; pin them to the taskbar)
+# - adds the launchers claude-cockpit and claude-dashboard (desktop files + icons); with cockpit.json
+#   "pin_launchers": true pins them to the first two taskbar slots
 # - remembers the workspace in ~/.config/claude-cockpit/workspace
 # - rules: if <workspace>/rules/ is missing, asks whether to use the shared ruleset (clone of $CLAUDE_RULES_REPO)
 #   or start your own (its cockpit.md plus an empty RULES.md, new git repo); answer ahead with
@@ -69,6 +70,19 @@ label=$(jq -r '.name // empty' "$ws/cockpit.json" 2>/dev/null); label=${label:-C
 desktop claude-cockpit "$label" "Claude Code sessions of the workspace (reopens the ones open before)" "$HOME/.local/bin/cockpit"
 desktop claude-dashboard "$label dashboard" "Live view of every project" "$HOME/.local/bin/dashboard --window"
 command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true
+# cockpit.json "pin_launchers": true pins both to the first two slots of every Plasma task manager (each run)
+if [ "$(jq -r '.pin_launchers // false' "$ws/cockpit.json" 2>/dev/null)" = true ] && command -v qdbus6 >/dev/null; then
+  qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '
+    const pins = ["applications:claude-cockpit.desktop", "applications:claude-dashboard.desktop"];
+    panels().forEach(p => p.widgets().forEach(w => {
+      if (w.type.indexOf("taskmanager") < 0 && w.type.indexOf("icontasks") < 0) return;
+      w.currentConfigGroup = ["General"];
+      let l = w.readConfig("launchers", []);
+      l = (Array.isArray(l) ? l : String(l).split(",")).filter(x => x && pins.indexOf(x) < 0);
+      w.writeConfig("launchers", pins.concat(l));
+      w.reloadConfig();
+    }));' >/dev/null 2>&1 && echo "pinned the launchers to the taskbar" || echo "warning: could not pin the launchers (Plasma not running?)" >&2
+fi
 "$here/lib/konsole-color" --profiles '#FF0096'   # tab colour profiles (Konsole without setTabColor); #FF0096 = dashboard
 
 # settings.json: one hook entry per event, added only if no entry runs that command yet
