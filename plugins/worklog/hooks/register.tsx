@@ -1,15 +1,19 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { LogEntry } from '../types'
+import type { LogEntry, PanePart } from '../types'
 
 // Side pane: the open "❓ Your turn" block of the last reply, each action spelled out from the whole reply by a small
 // model (what to do, where, why; the bare block until it answers), the project's open to-dos with their detail lines
 // (cockpit.json "todo_file", section "## <project>"), the project's Status: line, and one log line per turn: its
 // topic in a few words (summarised by a small model; until it answers, or if it fails, the start of the prompt).
-// The log gets only the rows left over. cockpit.json "panes": {"<project>": {"title": …, "file": …, "match": …}}
-// replaces the log of that project with the lines of a file (path from the workspace) that match the regex "match"
-// (default: "## " headings, else the top-level "- " items), re-read each turn.
+// The log gets only the rows left over. cockpit.json "panes" replaces the log with lines from files: "panes":
+// {"<project>": <part or list of parts>, "*": <default for projects without their own>}; a part is {"title", "file"
+// (path from the workspace, "{project}" = the project's path), "section" (regex for a "## " heading: only the lines
+// under it, "{project}" allowed), "match" (regex for the lines to show; its capture groups, if any, are shown joined
+// by " · "), "fallback": true (shown only when no other part has lines)}. Without "match": the "## " headings, else the
+// top-level items. Re-read each turn; parts with nothing
+// to show are left out, and with none left (and a list or the default) the log comes back.
 const PANE = 'worklog'
 const TITLE = 'Work log'
 const MARKER = '❓ **Your turn:**'
@@ -17,7 +21,7 @@ const status = atom({ plugin: 'worklog', key: 'status' } as const, '')
 const question = atom({ plugin: 'worklog', key: 'question' } as const, '')
 const detail = atom({ plugin: 'worklog', key: 'detail' } as const, '')
 const todos = atom({ plugin: 'worklog', key: 'todos' } as const, [] as string[])
-const custom = atom({ plugin: 'worklog', key: 'custom' } as const, { title: '', lines: [] as string[] })
+const custom = atom({ plugin: 'worklog', key: 'custom' } as const, [] as PanePart[])
 const log = atom({ plugin: 'worklog', key: 'log' } as const, [] as LogEntry[])
 const prompts = new Map<string, string>()   // turn id -> what was asked
 
@@ -68,7 +72,8 @@ async function readStatus($: EngineInterface, cwd: string) {
   return ''
 }
 
-type Conf = { todo_file?: string; name?: string; depth?: number; panes?: Record<string, { title?: string; file?: string; match?: string }> }
+type Part = { title?: string; file?: string; section?: string; match?: string; fallback?: boolean }
+type Conf = { todo_file?: string; name?: string; depth?: number; panes?: Record<string, Part | Part[]> }
 
 // The session's project: the workspace is the nearest folder up with a cockpit.json, the project its path below
 // it cut to "depth" levels (the root: cockpit.json "name")
@@ -84,18 +89,51 @@ async function project($: EngineInterface, cwd: string) {
   return { ws, conf, rel }
 }
 
-// The project's own pane section instead of the log (cockpit.json "panes"), or none
+// The project's own pane parts instead of the log (cockpit.json "panes"), or none
 async function readCustom($: EngineInterface, cwd: string) {
   const p = await project($, cwd)
-  const pane = p?.conf.panes?.[p.rel]
-  if (!p || !pane?.file) return { title: '', lines: [] as string[] }
-  let text = ''
-  try { text = await $.fs.read(`${p.ws}/${pane.file}`) } catch { return { title: pane.title || 'Log', lines: ['(file not found)'] } }
-  const pick = (re: RegExp) => text.split('\n').filter(l => re.test(l)).map(l => oneLine(l.replace(/^\s*(#+|[-*])\s*/, ''), 200))
-  let lines: string[]
-  try { lines = pane.match ? pick(new RegExp(pane.match)) : pick(/^## /) } catch { lines = ['(bad "match" regex)'] }
-  if (!pane.match && !lines.length) lines = pick(/^[-*] /)
-  return { title: pane.title || pane.file.split('/').pop() || '', lines }
+  const own = p?.conf.panes?.[p.rel]
+  const pane = own ?? p?.conf.panes?.['*']
+  if (!p || !pane) return []
+  const list = Array.isArray(pane)
+  const fill = (x: string) => x.split('{project}').join(p.rel)
+  const out: PanePart[] = [], spare: PanePart[] = []
+  for (const part of list ? pane : [pane]) {
+    if (!part.file) continue
+    const title = part.title || part.file.split('/').pop() || ''
+    let text = ''
+    try { text = await $.fs.read(`${p.ws}/${fill(part.file)}`) } catch {
+      if (!list && own) out.push({ title, lines: ['(file not found)'] })
+      continue
+    }
+    let src = text.split('\n')
+    try {
+      if (part.section) {
+        const re = new RegExp(fill(part.section))
+        let inside = false
+        src = src.filter(l => {
+          if (/^#{1,2} /.test(l)) { inside = /^## /.test(l) && re.test(l.slice(3)); return false }
+          return inside
+        })
+      }
+    } catch { out.push({ title, lines: ['(bad "section" regex)'] }); continue }
+    const show = (l: string, m?: RegExpMatchArray | null) => {
+      const g = m ? m.slice(1).filter(x => x && x.trim()) : []
+      return oneLine(g.length ? g.map(x => x.trim()).join(' · ') : l.replace(/^\s*(#+|[-*]|\d+\.)\s*(\[ \]\s*)?/, ''), 200)
+    }
+    let lines: string[]
+    try {
+      if (part.match) {
+        const re = new RegExp(part.match)
+        lines = src.map(l => [l, l.match(re)] as const).filter(([, m]) => m).map(([l, m]) => show(l, m))
+      } else {
+        lines = part.section ? [] : src.filter(l => /^## /.test(l)).map(l => show(l))
+        if (!lines.length) lines = src.filter(l => /^([-*]|\d+\.) /.test(l)).map(l => show(l))
+      }
+    } catch { lines = ['(bad "match" regex)'] }
+    if (lines.length || (!list && own)) (part.fallback ? spare : out).push({ title, lines })
+  }
+  return out.length ? out : spare
 }
 
 // Open to-dos of the session's project: the open "- [ ]" lines under "## <project>" (a " — suffix" on the heading
@@ -174,13 +212,14 @@ export const register: Register = on => {
     const q = (await read($, detail)) || (await read($, question))
     const td = await read($, todos)
     const entries = await read($, log)
-    const cu = await read($, custom)
+    const cu0 = await read($, custom)
+    const cu = Array.isArray(cu0) ? cu0 : []   // an older session may still hold the one-part form
     const qLines = q ? q.split('\n').filter(l => l.trim()) : []
     const tLines = td.flatMap(t => t.split('\n'))
     // Rows the wrapped texts take; the log gets what's left
     const width = Math.max(10, (e.viewport?.columns ?? 40) - 2)
     const rows = (ls: string[]) => ls.reduce((n, l) => n + Math.max(1, Math.ceil(l.length / width)), 0)
-    const used = 8 + rows(qLines.length ? qLines : ['-']) + rows(tLines.length ? tLines.map(l => '• ' + l) : ['-']) + rows([st || '—'])
+    const used = 6 + 2 * Math.max(1, cu.length) + rows(qLines.length ? qLines : ['-']) + rows(tLines.length ? tLines.map(l => '• ' + l) : ['-']) + rows([st || '—'])
     const room = Math.max(1, (e.viewport?.rows ?? 30) - used)
     return (
       <Box flexDirection="column">
@@ -195,13 +234,21 @@ export const register: Register = on => {
         <Text bold color="cyan">Status</Text>
         <Text wrap="wrap">{st || '—'}</Text>
         <Text> </Text>
-        <Text bold color="yellow">{cu.title || 'Log'}</Text>
-        {cu.title ? (cu.lines.length === 0 ? [<Text dimColor>empty</Text>]
-          : cu.lines.slice(0, room).map(l => <Text wrap="truncate-end">• {l}</Text>))
-          : entries.length === 0 ? [<Text dimColor>nothing yet</Text>]
-          : entries.slice(-room).map(en => (
-            <Text wrap="truncate-end"><Text dimColor>{en.time}</Text> {en.topic || en.asked || '(continued)'}</Text>
-          ))}
+        {cu.length ? cu.flatMap((c, k) => {
+          const n = k === cu.length - 1 ? room - Math.floor(room / cu.length) * k : Math.floor(room / cu.length)
+          return [
+            ...(k ? [<Text> </Text>] : []),
+            <Text bold color="yellow">{c.title}</Text>,
+            ...(c.lines.length === 0 ? [<Text dimColor>empty</Text>]
+              : c.lines.slice(0, Math.max(1, n)).map(l => <Text wrap="truncate-end">• {l}</Text>)),
+          ]
+        }) : [
+          <Text bold color="yellow">Log</Text>,
+          ...(entries.length === 0 ? [<Text dimColor>nothing yet</Text>]
+            : entries.slice(-room).map(en => (
+              <Text wrap="truncate-end"><Text dimColor>{en.time}</Text> {en.topic || en.asked || '(continued)'}</Text>
+            ))),
+        ]}
       </Box>
     )
   })
