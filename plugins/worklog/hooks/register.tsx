@@ -24,6 +24,7 @@ const todos = atom({ plugin: 'worklog', key: 'todos' } as const, [] as string[])
 const custom = atom({ plugin: 'worklog', key: 'custom' } as const, [] as PanePart[])
 const log = atom({ plugin: 'worklog', key: 'log' } as const, [] as LogEntry[])
 const prompts = new Map<string, string>()   // turn id -> what was asked
+let seated = false                          // pane re-opened on the first prompt
 
 const plain = (s: string) => s.replace(/\*\*|`/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
 const oneLine = (s: string, n: number) => {
@@ -176,6 +177,17 @@ export const register: Register = on => {
   on('command.run', { command: 'worklog' }, async $ => {
     await $.ui.open({ id: PANE, title: TITLE })
     return { text: 'Work log pane opened.' }
+  })
+
+  // Opened unasked at session start, the pane waits undrawn on a narrow terminal; the first prompt
+  // counts as the person asking, so it seats then at any width (unless they closed it by hand)
+  on('prompt.submit', async ($, e, next) => {
+    if (!seated) {
+      seated = true
+      const p = (await $.ui.panes()).find(x => x.id === PANE)
+      if (p && !p.isPlaced) void $.ui.open({ id: PANE, title: TITLE })
+    }
+    return next(e)
   })
 
   on('turn.start', async ($, e, next) => {
