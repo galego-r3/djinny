@@ -72,7 +72,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `hooks/cockpit-pull.sh` | UserPromptSubmit hook: pulls the cockpit in the background (at most once a minute, fast-forward only, never over local changes), re-runs `install.sh` when the pull touched it, `systemd/` or `plugins/`, reports the update on the next prompt; log `~/.cache/claude/cockpit-pull.log` |
 | `hooks/repo-pull.sh` | UserPromptSubmit hook: pulls the session's repo before Claude answers (see above); log `~/.cache/claude/repo-pull.log` |
 | `lib/presence` | `push` / `fetch` / `show` / `usage`: this and the other machines' running sessions and token counts (branches `cockpit-presence/<host>`, one parentless commit each, force-pushed) |
-| `hooks/clear-prompt.sh` | UserPromptSubmit hook: a prompt `clear` or `clear: <message>` types `/clear` (then the message) into the Konsole tab, so the session clears itself and starts on the message |
+| `hooks/clear-prompt.sh` | UserPromptSubmit hook: a prompt `clear` or `clear: <message>` (also `clear, …`, `clear - …`, `clear then …`, `clear and then …`; not `clear the …`) types `/clear` (then the message) into the Konsole tab, so the session clears itself and starts on the message |
 | `hooks/sort-tabs.sh` | sorts the Konsole tabs of the current window |
 | `hooks/statusline.sh` | Claude Code status line |
 | `plugins/restart/` | Claude Code mod: `/restart` ends the session and resumes it in the same tab (`bin/claude-restart`, resumed by the `claude()` wrapper in `shell/bashrc.sh`), e.g. after changing mods or settings |

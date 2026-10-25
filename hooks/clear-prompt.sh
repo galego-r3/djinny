@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook: a prompt "clear" or "clear: <message>" clears the session and then sends <message>
+# UserPromptSubmit hook: a prompt "clear" or "clear: <message>" (also "clear, …", "clear - …", "clear then …",
+# "clear, then …", "clear and then …"; not "clear the …") clears the session and then sends <message>
 # into the fresh one. Claude can't run /clear itself, so the prompt is blocked and the hook types /clear + Enter
 # (then the message + Enter) into the Konsole tab over D-Bus. Konsole only; elsewhere the prompt goes through.
 prompt=$(jq -r '.prompt // empty')
 shopt -s nocasematch
-[[ $prompt =~ ^[[:space:]]*clear[[:space:]]*(:[[:space:]]*(.*))?$ ]] || exit 0
+re='^[[:space:]]*clear[[:space:]]*(([:,;-][[:space:]]*(then[[:space:]]+)?|[[:space:]]+(and[[:space:]]+)?then[[:space:]]+)(.*))?$'
+[[ $prompt =~ $re ]] || exit 0
 [[ -n $KONSOLE_DBUS_SERVICE && -n $KONSOLE_DBUS_SESSION ]] && command -v qdbus6 >/dev/null || exit 0
-msg=${BASH_REMATCH[2]}
+msg=${BASH_REMATCH[5]}
 q() { qdbus6 "$KONSOLE_DBUS_SERVICE" "$KONSOLE_DBUS_SESSION" org.kde.konsole.Session.sendText "$1" >/dev/null; }
 # In the background, after Claude Code has handled the block and is back at the prompt
 (
