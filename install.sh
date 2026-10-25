@@ -58,7 +58,7 @@ if [ -f "$ws/$rd/RULES.md" ] && ! grep -qxF "@$rd/RULES.md" "$ws/CLAUDE.md" 2>/d
 fi
 
 for f in "$here"/bin/*; do ln -sfn "$f" ~/.local/bin/"$(basename "$f")"; done
-for f in session-name.sh session-state.sh sort-tabs.sh cockpit-pull.sh repo-pull.sh; do ln -sfn "$here/hooks/$f" ~/.claude/hooks/$f; done
+for f in session-name.sh session-state.sh sort-tabs.sh cockpit-pull.sh repo-pull.sh clear-prompt.sh; do ln -sfn "$here/hooks/$f" ~/.claude/hooks/$f; done
 ln -sfn "$here/hooks/statusline.sh" ~/.claude/statusline.sh
 # launchers with their own taskbar icons (the windows' Wayland app id = desktop file name): the sessions and the dashboard
 mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps
@@ -106,6 +106,7 @@ jq --argjson plugins "$plugins" '
       (.; add($ev; "~/.claude/hooks/session-state.sh"))
   | add("UserPromptSubmit"; "~/.claude/hooks/cockpit-pull.sh")
   | add("UserPromptSubmit"; "~/.claude/hooks/repo-pull.sh")
+  | add("UserPromptSubmit"; "~/.claude/hooks/clear-prompt.sh")
   | .statusLine //= {type: "command", command: "~/.claude/statusline.sh", refreshInterval: 30}
   | .env.CLAUDE_CODE_PLUGIN_DIRS = ((.env.CLAUDE_CODE_PLUGIN_DIRS // "" | split(":") | map(select(. != ""))) as $have
       | $have + ($plugins - $have) | join(":"))
