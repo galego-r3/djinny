@@ -89,6 +89,12 @@ cost=$(j '.cost.total_cost_usd')
 
 . "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
 
+# [clear] button: an OSC 8 link that lib/cockpit-url turns into /clear + Enter in this Konsole tab
+# (Konsole opens it on click when the tab's profile allows cockpit:// links, see lib/konsole-color)
+if [[ $KONSOLE_DBUS_SERVICE =~ ^:([0-9]+\.[0-9]+)$ && $KONSOLE_DBUS_SESSION =~ ^/Sessions/([0-9]+)$ ]]; then
+  parts+=($'\e]8;;cockpit://clear/'"${KONSOLE_DBUS_SERVICE#:}/${KONSOLE_DBUS_SESSION#/Sessions/}"$'\a'"${DIM}[clear]${RESET}"$'\e]8;;\a')
+fi
+
 out=""
 for p in "${parts[@]}"; do
   [[ -n $out ]] && out+=$SEP
@@ -109,7 +115,7 @@ term_cols() {
 }
 cols=$(term_cols); cols=${cols:-${COLUMNS:-0}}
 MARGIN=4  # Claude Code indents the status line; keep clear of the right edge
-plain=$(sed $'s/\e\[[0-9;]*m//g' <<<"$out")
+plain=$(sed $'s/\e\[[0-9;]*m//g; s/\e]8;;[^\a]*\a//g' <<<"$out")
 
 # Folder name as in the session/tab name: path relative to the workspace, e.g. "family/schule"
 # (the root itself is the workspace's name), otherwise the current directory's own name.

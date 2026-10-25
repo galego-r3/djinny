@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Handler for cockpit:// links (x-scheme-handler/cockpit, set by install.sh), clicked in a Konsole tab.
+#   cockpit://clear/<bus>/<n>   types /clear + Enter into Konsole session /Sessions/<n> on D-Bus name :<bus>
+# The status line prints the [clear] link with the tab's own $KONSOLE_DBUS_SERVICE / $KONSOLE_DBUS_SESSION.
+if [[ $1 =~ ^cockpit://clear/([0-9]+\.[0-9]+)/([0-9]+)/?$ ]]; then
+  q() { qdbus6 ":${BASH_REMATCH[1]}" "/Sessions/${BASH_REMATCH[2]}" org.kde.konsole.Session.sendText "$1"; }
+  q /clear && sleep 0.2 && q $'\r'
+else
+  echo "cockpit-url: unknown link: $1" >&2; exit 2
+fi

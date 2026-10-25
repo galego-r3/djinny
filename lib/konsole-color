@@ -5,7 +5,7 @@
 # Konsole up to 26.04 has Session.setTabColor. Newer ones (26.08) dropped it: there the tab switches to a
 # generated profile "cockpit-RRGGBB" (parent: the default profile, plus TabColor). A running Konsole only
 # finds profiles that existed when it started, so a colour that's new since then shows after a Konsole
-# restart (exit 1 until then).
+# restart (exit 1 until then). The profiles also allow cockpit:// links (the status line's [clear] button).
 . "$(dirname "$(readlink -f "$0")")/env.sh"
 pdir=${XDG_DATA_HOME:-$HOME/.local/share}/konsole
 
@@ -15,7 +15,7 @@ profile() {   # writes the profile for colour $1, prints its name
   parent=$(sed -n 's/^DefaultProfile=//p' "${XDG_CONFIG_HOME:-$HOME/.config}/konsolerc" 2>/dev/null)
   if [ -n "$parent" ] && [ -f "$pdir/$parent" ]; then parent="$pdir/$parent"; else parent=FALLBACK/; fi
   mkdir -p "$pdir"
-  printf '[General]\nName=cockpit-%s\nParent=%s\nTabColor=%d,%d,%d\n' "$hex" "$parent" \
+  printf '[General]\nName=cockpit-%s\nParent=%s\nTabColor=%d,%d,%d\n[Interaction Options]\nAllowEscapedLinks=true\nEscapedLinksSchema=http://;https://;file://;cockpit://\n' "$hex" "$parent" \
     "0x${hex:0:2}" "0x${hex:2:2}" "0x${hex:4:2}" > "$pdir/cockpit-$hex.profile.tmp"
   cmp -s "$pdir/cockpit-$hex.profile.tmp" "$pdir/cockpit-$hex.profile" && rm "$pdir/cockpit-$hex.profile.tmp" \
     || mv "$pdir/cockpit-$hex.profile.tmp" "$pdir/cockpit-$hex.profile"
