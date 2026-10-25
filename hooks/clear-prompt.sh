@@ -12,6 +12,11 @@ elif [[ $prompt =~ $short ]]; then msg=${BASH_REMATCH[2]}
 else exit 0; fi
 [[ -n $KONSOLE_DBUS_SERVICE && -n $KONSOLE_DBUS_SESSION ]] && command -v qdbus6 >/dev/null || exit 0
 q() { qdbus6 "$KONSOLE_DBUS_SERVICE" "$KONSOLE_DBUS_SESSION" org.kde.konsole.Session.sendText "$1" >/dev/null; }
+# Probe with an empty text: Konsole 26.08+ refuses sendText unless EnableSecuritySensitiveDBusAPI is on (install.sh)
+if ! err=$(qdbus6 "$KONSOLE_DBUS_SERVICE" "$KONSOLE_DBUS_SESSION" org.kde.konsole.Session.sendText "" 2>&1 >/dev/null) || [[ -n $err ]]; then
+  jq -n --arg e "${err:-sendText failed}" '{decision: "block", reason: ("cannot clear: Konsole refused to type /clear (\($e)). Run cockpit/install.sh and restart Konsole, or type /clear yourself.")}'
+  exit 0
+fi
 # In the background, after Claude Code has handled the block and is back at the prompt
 (
   sleep 1; q /clear; sleep 0.3; q $'\r'

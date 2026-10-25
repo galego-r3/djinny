@@ -114,6 +114,9 @@ jq --argjson plugins "$plugins" '
 if ! cmp -s "$tmp" "$settings"; then cp "$settings" "$settings.bak"; mv "$tmp" "$settings"; echo "updated $settings (backup: settings.json.bak)"
 else rm -f "$tmp"; fi
 
+# Konsole 26.08+ refuses D-Bus sendText (used by hooks/clear-prompt.sh) unless this is on; takes effect after a Konsole restart
+command -v kwriteconfig6 >/dev/null && kwriteconfig6 --file konsolerc --group KonsoleWindow --key EnableSecuritySensitiveDBusAPI true
+
 cp "$here"/systemd/claude-jobs.{service,timer} "$here"/systemd/cockpit-web.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now claude-jobs.timer >/dev/null
