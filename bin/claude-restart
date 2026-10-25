@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Restarts the Claude session that runs this (from a tool call, a `!` command or the /restart mod): ends that
+# claude process and resumes the same conversation in the same tab. The claude() wrapper in shell/bashrc.sh does
+# the resume when it finds the marker ~/.cache/claude/restart/<pid of the tab's shell> after claude ended.
+#   claude-restart [<session id>]   restart; without an id, the one in ~/.claude/sessions/<pid>.json
+set -euo pipefail
+pid=$PPID
+for _ in 1 2 3 4 5 6 7 8; do
+  [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = claude ] && break
+  pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' '); [ -n "$pid" ] || break
+done
+[ "$(cat "/proc/${pid:-0}/comm" 2>/dev/null)" = claude ] || { echo "claude-restart: not run from a claude session" >&2; exit 1; }
+sid=${1:-$(jq -r '.sessionId // empty' "$HOME/.claude/sessions/$pid.json" 2>/dev/null || true)}
+[ -n "$sid" ] || { echo "claude-restart: no session id" >&2; exit 1; }
+shell=$(ps -o ppid= -p "$pid" | tr -d ' ')
+mkdir -p "$HOME/.cache/claude/restart"
+echo "$sid" > "$HOME/.cache/claude/restart/$shell"
+setsid -f sh -c "sleep 0.5; kill -TERM $pid" </dev/null >/dev/null 2>&1
+echo "restarting"

@@ -1,8 +1,19 @@
 # Claude in Konsole tabs. Sourced from ~/.bashrc (line added by install.sh).
 # Leaving an interactive claude session (/exit) closes the tab too, unless claude failed. Only for
 # plain interactive runs typed at a prompt: not -p/--print, --version, --help or subcommands.
+# A session ended by claude-restart (/restart) is resumed instead: its id is in ~/.cache/claude/restart/<this shell's pid>.
 claude() {
-  command claude "$@"; local rc=$?
+  local args=("$@") rc m="$HOME/.cache/claude/restart/$$" x skip a
+  while :; do
+    command claude "${args[@]}"; rc=$?
+    [[ -f $m ]] || break
+    a=(); skip=
+    for x in "${args[@]}"; do   # same flags, minus the old --resume / --continue
+      if [[ $skip ]]; then skip=; continue; fi
+      case $x in --resume|-r) skip=1 ;; --resume=*|-c|--continue) ;; *) a+=("$x") ;; esac
+    done
+    args=("${a[@]}" --resume "$(<"$m")"); rm -f "$m"
+  done
   if [[ $- == *i* && -t 0 && -n $KONSOLE_DBUS_SESSION && $rc -eq 0 && ( -z $1 || $1 == -* ) ]]; then
     case " $* " in *" -p "*|*" --print "*|*" -v "*|*" --version "*|*" -h "*|*" --help "*) ;; *) exit 0 ;; esac
   fi
