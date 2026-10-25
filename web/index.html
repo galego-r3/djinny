@@ -43,6 +43,8 @@
   .item { display: flex; gap: 8px; padding: 3px 0 3px 12px; }
   .item input { margin-top: 3px; cursor: pointer; }
   .pinned { font-weight: 600; margin: 8px 0; }
+  .item.agenda { font-size: 18px; font-weight: 600; padding: 6px 0 6px 12px; }
+  .item.old { color: var(--dim); font-weight: 400; }
   .chore { padding: 2px 0 2px 12px; }
   .chore .when { display: inline-block; min-width: 150px; color: var(--dim); }
   .chore.late .when { color: var(--question); }
@@ -90,8 +92,9 @@ function tabs() {
   if (!views.includes(view)) view = 'Active'
   const active = data.rows.filter(r => r.running || r.remote).length
   const nTodo = data.todos.sections.reduce((a, s) => a + s.items.length, 0)
+  const nAgenda = data.agenda.today ? data.agenda.items.filter(i => !i.done).length : 0
   $('tabs').innerHTML = views.map(v => `<button class="${v === view ? 'on' : ''}" data-v="${esc(v)}">${esc(v)}${
-    v === 'Active' ? ` (${active})` : v === 'To-dos' ? ` (${nTodo})` : ''}</button>`).join('')
+    v === 'Active' ? ` (${active})` : v === 'To-dos' ? ` (${nTodo})` : v === 'Agenda' ? ` (${nAgenda})` : ''}</button>`).join('')
   return views
 }
 
@@ -142,6 +145,15 @@ function todoView() {
   return h || `<div class="empty">nothing to do</div>`
 }
 
+function agendaView() {
+  const a = data.agenda
+  let h = a.today ? '' : `<div class="pinned" style="color:var(--question)">no agenda for today yet</div>
+    <div class="action">set it: todo agenda &lt;item&gt;, &lt;item&gt;, …</div>${a.day ? `<div class="sec">last one, ${esc(a.day)}</div>` : ''}`
+  h += a.items.map(i => `<label class="item agenda ${a.today && !i.done ? '' : 'old'}"><input type="checkbox" ${i.done ? 'checked' : ''} ${a.today && !i.done ? '' : 'disabled'}
+    data-tick="${i.index}" data-text="${esc(i.text)}" data-file="agenda"><span>${esc(i.text)}</span></label>`).join('')
+  return h
+}
+
 function render() {
   if (!data) return
   document.title = `${data.name} · cockpit`
@@ -150,7 +162,7 @@ function render() {
   $('limits').innerHTML = Object.entries(data.limits).map(([k, v]) =>
     `<span>${k} <b>${v.percent ?? '?'}%</b> ↻ ${time(v.resets)}</span>`).join(' &nbsp; ')
   tabs()
-  $('main').innerHTML = view === 'To-dos' ? todoView() : rowsView()
+  $('main').innerHTML = view === 'To-dos' ? todoView() : view === 'Agenda' ? agendaView() : rowsView()
 }
 
 document.addEventListener('click', e => {
@@ -158,7 +170,7 @@ document.addEventListener('click', e => {
   if (t.dataset.v) setView(t.dataset.v)
   else if (t.dataset.open) post('/api/open', { project: t.dataset.open })
   else if (t.dataset.dismiss) post('/api/dismiss', { project: t.dataset.dismiss })
-  else if (t.dataset.tick) { t.disabled = true; post('/api/tick', { index: +t.dataset.tick, text: t.dataset.text }) }
+  else if (t.dataset.tick) { t.disabled = true; post('/api/tick', { index: +t.dataset.tick, text: t.dataset.text, file: t.dataset.file }) }
 })
 document.addEventListener('keydown', e => {
   if (e.key !== 'Tab' || !data) return

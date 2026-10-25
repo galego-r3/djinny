@@ -4,7 +4,8 @@
 
 Tabs (Tab key or click): Active (projects with a running session here or on another machine, or a saved
 question), one per category (the first folder of the project's path; projects directly in the workspace and the
-root go under "other"; archived projects, Status: archived …, at the end, dimmed), To-dos (the to-do file from cockpit.json "todo_file" plus chores due within 7 days; click ☐ to tick an item)
+root go under "other"; archived projects, Status: archived …, at the end, dimmed), Agenda (today's focus from
+cockpit.json "agenda_file", set with `todo agenda`; only with that setting), To-dos (the to-do file from cockpit.json "todo_file" plus chores due within 7 days; click ☐ to tick an item)
 and Commands (the cockpit's commands with the usage lines from their headers, plus cockpit.json "commands":
 {"command": "what it does"}). Scroll with the wheel or ↑/↓/PgUp/PgDn when a tab doesn't fit.
 One row per project: colour, live state, status line, last tool call of a running session, tokens used in the
@@ -108,15 +109,15 @@ OTHER = "other"                 # category of projects directly in the workspace
 def category(rel): return rel.split("/", 1)[0] if "/" in rel else OTHER
 
 def views(all_rows):
-    """Active, one tab per category (A–Z, "other" last), To-dos, Commands."""
+    """Active, one tab per category (A–Z, "other" last), Agenda (with "agenda_file"), To-dos, Commands."""
     cats = sorted({category(r) for r, _ in all_rows}, key=lambda c: (c == OTHER, c))
-    return ["Active", *cats, "To-dos", "Commands"]
+    return ["Active", *cats, *(["Agenda"] if CONF.get("agenda_file") else []), "To-dos", "Commands"]
 
 VIEWS = ["Active", "To-dos", "Commands"]   # refreshed every frame
 CATCOL = {}                     # category tab -> its colour: its own entry in "colors", else its projects' middle shade
 VIEW = ["Active"]               # name of the current tab
 TABS = []                       # (screen line, start column, end column, view name) of each tab label, for clicks
-TICK = {}                       # screen line -> (to-do file line index, item text) in the To-dos tab
+TICK = {}                       # screen line -> (file, line index, item text) in the To-dos and Agenda tabs
 SCROLL = [0]                    # first body line shown (project rows, to-dos, commands)
 
 def load_colors():
@@ -411,7 +412,7 @@ def fmt_reset(ts):
     t = time.localtime(ts)
     return time.strftime("%H:%M" if time.strftime("%F", t) == time.strftime("%F") else "%a %H:%M", t)
 
-def header(limits, n_active, n_todo):
+def header(limits, n_active, n_todo, n_agenda=None):
     head = f"{BOLD}{esc('#7EC8F7')}▌ {NAME} workspace{RST} {DIM}{time.strftime('%Y-%m-%d %H:%M:%S')}"
     for label in ("5h", "7d"):
         if label in limits:
@@ -426,7 +427,7 @@ def header(limits, n_active, n_todo):
     cur = CATCOL.get(VIEW[0]) or '#7EC8F7'
     rows_, row, col_ = [], [], 2
     for name in VIEWS:
-        n = {"Active": n_active, "To-dos": n_todo}.get(name)
+        n = {"Active": n_active, "To-dos": n_todo, "Agenda": n_agenda}.get(name)
         label = f"  {name} ({n})  " if n is not None else f"  {name}  "
         if row and col_ + len(label) > W:
             rows_.append(row); row, col_ = [], 2
@@ -487,7 +488,27 @@ def todo_frame(head, W, H, colors):
                 col = (STATES["question"] if key in ("Priority", "Questions from agents")
                        else color_of(NAME if key.startswith(NAME) else key, colors))
                 body += [("", None), (f"{BOLD}{esc(col) if col else ''}▌ {s}{RST}", None)]
-            body.append((f"    ☐ {cut(todos.plain(text), W - 8)}", (i, text)))
+            body.append((f"    ☐ {cut(todos.plain(text), W - 8)}", (path, i, text)))
+    return scrolled(head, body, H)
+
+def agenda_frame(head, W, H):
+    """The Agenda tab: today's focus items; an older agenda dimmed when none is set for today."""
+    path = todos.agenda_file(ROOT, CONF)
+    day, items = todos.agenda(path)
+    today = day == datetime.date.today().isoformat()
+    body = [("", None)]
+    if not today:
+        body.append((f"  {esc(STATES['question'])}no agenda for today yet{RST}  {DIM}set it: todo agenda <item>, <item>, …{RST}", None))
+        if day: body += [("", None), (f"  {DIM}last one, {day}:{RST}", None)]
+    for i, done, text in items:
+        mark = "☑" if done else "☐"
+        line = f"    {mark} {cut(text, W - 8)}"
+        body.append((f"{BOLD}{line}{RST}" if today and not done else f"{DIM}{line}{RST}",
+                     (path, i, text) if today and not done else None))
+    return scrolled(head, body, H)
+
+def scrolled(head, body, H):
+    """Header plus the visible part of a tickable body [(line, (file, index, text) or None)], hint line last."""
     room = max(1, H - len(head) - 2)
     SCROLL[0] = max(0, min(SCROLL[0], len(body) - room))
     shown = body[SCROLL[0]:SCROLL[0] + room]
@@ -597,14 +618,22 @@ def snapshot():
             todo["sections"][-1]["items"].append({"index": i, "text": text, "plain": todos.plain(text)})
     data = {"name": NAME, "time": int(now), "states": STATES, "levels": LEVELS, "level_colors": LCOL,
             "limits": {k: {"percent": v[0], "resets": v[1]} for k, v in limits.items()},
-            "views": views(all_rows), "rows": rows, "todos": todo}
+            "views": views(all_rows), "rows": rows, "todos": todo, "agenda": agenda_data()}
     return data, qfiles
+
+def agenda_data():
+    path = todos.agenda_file(ROOT, CONF)
+    day, items = todos.agenda(path) if path else (None, [])
+    return {"day": day, "today": day == datetime.date.today().isoformat(),
+            "items": [{"index": i, "done": done, "text": t} for i, done, t in items]}
 
 def frame():
     now = time.time()
     all_rows, colors = load_rows(), load_colors()
-    tpath = todos.todo_file(ROOT, CONF)
+    tpath, apath = todos.todo_file(ROOT, CONF), todos.agenda_file(ROOT, CONF)
     n_todo = len(todos.open_items(tpath)) if tpath else 0
+    day, items = todos.agenda(apath) if apath else (None, [])
+    n_agenda = sum(not done for _, done, _ in items) if day == datetime.date.today().isoformat() else 0
     row_paths = sorted((r for r, _ in all_rows if r != NAME), key=len, reverse=True)   # usage counts for all
     VIEWS[:] = views(all_rows)
     CATCOL.clear(); CATCOL.update(cat_colors(all_rows, colors))
@@ -613,10 +642,12 @@ def frame():
     live, qfiles = live_states(row_paths)
     remote = remote_states(row_paths)
     active = [(r, st) for r, st in all_rows if r in RUNNING or r in live or r in remote]
-    if VIEW[0] in ("To-dos", "Commands"):
+    if VIEW[0] in ("Agenda", "To-dos", "Commands"):
         W, H = shutil.get_terminal_size((120, 40))
-        if VIEW[0] == "Commands": return commands_frame(header(limits, len(active), n_todo), W, H)
-        return todo_frame(header(limits, len(active), n_todo), W, H, colors)
+        head = header(limits, len(active), n_todo, n_agenda)
+        if VIEW[0] == "Commands": return commands_frame(head, W, H)
+        if VIEW[0] == "Agenda": return agenda_frame(head, W, H)
+        return todo_frame(head, W, H, colors)
     rows = active if VIEW[0] == "Active" else sorted(
         ((r, st) for r, st in all_rows if category(r) == VIEW[0]), key=lambda x: is_archived(x[1]))
     usage = usage_counts(windows, row_paths, now)
@@ -632,7 +663,7 @@ def frame():
     actcol = actw + 2 if actw else 0
     statw = max(12, min(max((len(s) for _, s in rows), default=12), W - fixed - 1 - actcol))
 
-    out = header(limits, len(active), n_todo)
+    out = header(limits, len(active), n_todo, n_agenda)
     pad = " " * (3 + namew + 2 + STATEW + statw + 2 + actcol)
     out.append(pad + " ".join(f"{BOLD}{esc(c)}{t:>{NUMW}}{RST}" for t, c in zip(("5h", "7d", "all"), HCOL)))
 
@@ -792,9 +823,9 @@ def handle_input(data):
         if any(line == int(y) for line, *_ in TABS):              # tab bar (second line on)
             for line, start, end, name in TABS:
                 if line == int(y) and start <= int(x) <= end: VIEW[0] = name; SCROLL[0] = 0; redraw = False
-        elif VIEW[0] == "To-dos":
+        elif VIEW[0] in ("To-dos", "Agenda"):
             if int(y) - 1 in TICK and int(x) <= 6:                # the ☐ column
-                todos.tick(todos.todo_file(ROOT, CONF), *TICK[int(y) - 1]); redraw = False
+                todos.tick(*TICK[int(y) - 1]); redraw = False
         elif int(y) - 1 in CLICK:
             goto_project(CLICK[int(y) - 1]); redraw = False
     rest = MOUSE.sub("", data)

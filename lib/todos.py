@@ -4,6 +4,8 @@ To-do file (cockpit.json "todo_file"): `## <section>` headings (a project path, 
 or a free name like "Priority"); items `- [ ] **What** — context → link (added YYYY-MM-DD)`, ticked as
 `- [x] … (done YYYY-MM-DD)`. Chores: a markdown table `| Chore | Interval | Last done | Next due | Details |`
 in any project's `chores.md`.
+Agenda file (cockpit.json "agenda_file"): the day's focus, one `## YYYY-MM-DD` section per day, newest first,
+items `- [ ] What` (ticked `- [x]`).
 """
 import datetime, os, re
 from pathlib import Path
@@ -82,6 +84,35 @@ def tick(path, index, text, today=None):
     lines[index] = f"- [x] {text} (done {today})"
     _write(path, lines)
     return True
+
+def agenda_file(root, conf):
+    f = conf.get("agenda_file")
+    return root / f if f else None
+
+def agenda(path):
+    """(date, [(line index, done, item text)]) of the newest dated section, or (None, [])."""
+    try:
+        text = path.read_text()
+    except OSError:
+        return None, []
+    days = [s for s in parse(text) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s[0])]
+    return max(days, key=lambda s: s[0]) if days else (None, [])
+
+def set_agenda(path, items, today=None):
+    """Writes today's agenda (replacing an earlier one of today) as the first section."""
+    today = today or datetime.date.today().isoformat()
+    lines = path.read_text().splitlines() if path.exists() else ["# Agenda", ""]
+    heads = [i for i, l in enumerate(lines) if l.startswith("## ")]
+    at = next((i for i in heads if lines[i][3:].strip() == today), None)
+    if at is not None:
+        end = next((i for i in heads if i > at), len(lines))
+        del lines[at:end]
+        heads = [i for i, l in enumerate(lines) if l.startswith("## ")]
+    pos = heads[0] if heads else len(lines)
+    if pos == len(lines) and lines and lines[-1].strip():
+        lines.append(""); pos += 1
+    lines[pos:pos] = [f"## {today}", *(f"- [ ] {t.strip()}" for t in items if t.strip()), ""]
+    _write(path, lines)
 
 def chores(root, hidden=(), skip=(".git", ".venv", "node_modules")):
     """[(next due date, project, chore, last done)] from every project's chores.md table."""

@@ -65,8 +65,9 @@ class Handler(BaseHTTPRequestHandler):
                 dash.DISMISS["web"] = qfiles.get(str(body.get("project", "")), [])
                 dash.dismiss("web")
             elif self.path == "/api/tick":
-                path = dash.todos.todo_file(dash.ROOT, dash.CONF)
-                if not path: return self.send(400, {"error": "no todo_file"})
+                kind = "agenda" if body.get("file") == "agenda" else "todo"
+                path = getattr(dash.todos, kind + "_file")(dash.ROOT, dash.CONF)
+                if not path: return self.send(400, {"error": f"no {kind}_file"})
                 dash.todos.tick(path, int(body.get("index", -1)), str(body.get("text", "")))
             else:
                 return self.send(404, {"error": "not found"})

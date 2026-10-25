@@ -8,6 +8,9 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   dismiss a question row (marks it idle, no tokens used). `q` quits. Starting `claude` in a Konsole window
   without a dashboard opens one in a new tab (DASH) next to it; `"dashboard_autostart": false` in
   `cockpit.json` turns that off.
+- **Agenda tab**: with `"agenda_file"` in `cockpit.json` (e.g. `todos/AGENDA.md`), a tab before To-dos shows
+  the day's focus, set each morning with `todo agenda <a>, <b>, …` (one `## YYYY-MM-DD` section per day, newest
+  first); its items tick like to-dos. Until today's is set, the tab says so and shows the last one dimmed.
 - **Web dashboard** (`cockpit-web`): the same as a page in the browser, served on `127.0.0.1:8765` by the
   user service `cockpit-web.service` (always on). Click a project to go to its Konsole tab (or open one),
   dismiss questions, tick to-dos; Tab/Shift+Tab switch tabs. With `"dashboard": "web"` in `cockpit.json`,

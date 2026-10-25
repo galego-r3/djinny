@@ -6,6 +6,8 @@
                                or to the default section (cockpit.json "todo_default") outside a project
   todo -p <section> <text>     add to that section: a project path, or e.g. "Priority"
   todo done <n>                tick off item n of the list
+  todo agenda                  show the day's agenda (cockpit.json "agenda_file")
+  todo agenda <a>, <b>, …      set today's agenda (replaces one already set today)
 
 "What — context" makes "What" bold, as in the rest of the file. The dashboard's To-dos tab shows the same list.
 """
@@ -55,6 +57,15 @@ def main():
         return
     if args[0] in ("-h", "--help"):
         print(__doc__.strip()); return
+    if args[0] == "agenda":
+        apath = todos.agenda_file(ROOT, CONF)
+        if not apath: sys.exit('todo: no "agenda_file" in cockpit.json')
+        if len(args) > 1:
+            todos.set_agenda(apath, " ".join(args[1:]).split(","))
+        day, items = todos.agenda(apath)
+        print(f"agenda {day or '(none)'}")
+        for _, done, text in items: print(f"  {'[x]' if done else '[ ]'} {text}")
+        return
     if args[0] == "done":
         if len(args) != 2 or not args[1].isdigit() or not 1 <= int(args[1]) <= len(items):
             sys.exit(f"todo done <n>: n from `todo` (1–{len(items)})")
