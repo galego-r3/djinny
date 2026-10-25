@@ -7,7 +7,9 @@ import type { LogEntry } from '../types'
 // model (what to do, where, why; the bare block until it answers), the project's open to-dos with their detail lines
 // (cockpit.json "todo_file", section "## <project>"), the project's Status: line, and one log line per turn: its
 // topic in a few words (summarised by a small model; until it answers, or if it fails, the start of the prompt).
-// The log gets only the rows left over.
+// The log gets only the rows left over. cockpit.json "panes": {"<project>": {"title": …, "file": …, "match": …}}
+// replaces the log of that project with the lines of a file (path from the workspace) that match the regex "match"
+// (default: "## " headings, else the top-level "- " items), re-read each turn.
 const PANE = 'worklog'
 const TITLE = 'Work log'
 const MARKER = '❓ **Your turn:**'
@@ -15,6 +17,7 @@ const status = atom({ plugin: 'worklog', key: 'status' } as const, '')
 const question = atom({ plugin: 'worklog', key: 'question' } as const, '')
 const detail = atom({ plugin: 'worklog', key: 'detail' } as const, '')
 const todos = atom({ plugin: 'worklog', key: 'todos' } as const, [] as string[])
+const custom = atom({ plugin: 'worklog', key: 'custom' } as const, { title: '', lines: [] as string[] })
 const log = atom({ plugin: 'worklog', key: 'log' } as const, [] as LogEntry[])
 const prompts = new Map<string, string>()   // turn id -> what was asked
 
@@ -65,18 +68,42 @@ async function readStatus($: EngineInterface, cwd: string) {
   return ''
 }
 
-// Open to-dos of the session's project: the workspace is the nearest folder up with a cockpit.json, the project
-// its path below it cut to "depth" levels (the root: cockpit.json "name"), its items the open "- [ ]" lines under
-// "## <project>" (a " — suffix" on the heading is fine) in the to-do file
-async function readTodos($: EngineInterface, cwd: string) {
+type Conf = { todo_file?: string; name?: string; depth?: number; panes?: Record<string, { title?: string; file?: string; match?: string }> }
+
+// The session's project: the workspace is the nearest folder up with a cockpit.json, the project its path below
+// it cut to "depth" levels (the root: cockpit.json "name")
+async function project($: EngineInterface, cwd: string) {
   let ws = cwd
-  let conf: { todo_file?: string; name?: string; depth?: number } | undefined
+  let conf: Conf | undefined
   for (let i = 0; i < 8 && ws.length > 1; i++) {
     try { conf = JSON.parse(await $.fs.read(`${ws}/cockpit.json`)); break } catch { ws = ws.replace(/\/[^/]+$/, '') || '/' }
   }
-  if (!conf?.todo_file) return []
+  if (!conf) return undefined
   const rel = cwd === ws ? (conf.name || ws.split('/').pop() || '')
     : cwd.slice(ws.length + 1).split('/').slice(0, conf.depth ?? 2).join('/')
+  return { ws, conf, rel }
+}
+
+// The project's own pane section instead of the log (cockpit.json "panes"), or none
+async function readCustom($: EngineInterface, cwd: string) {
+  const p = await project($, cwd)
+  const pane = p?.conf.panes?.[p.rel]
+  if (!p || !pane?.file) return { title: '', lines: [] as string[] }
+  let text = ''
+  try { text = await $.fs.read(`${p.ws}/${pane.file}`) } catch { return { title: pane.title || 'Log', lines: ['(file not found)'] } }
+  const pick = (re: RegExp) => text.split('\n').filter(l => re.test(l)).map(l => oneLine(l.replace(/^\s*(#+|[-*])\s*/, ''), 200))
+  let lines: string[]
+  try { lines = pane.match ? pick(new RegExp(pane.match)) : pick(/^## /) } catch { lines = ['(bad "match" regex)'] }
+  if (!pane.match && !lines.length) lines = pick(/^[-*] /)
+  return { title: pane.title || pane.file.split('/').pop() || '', lines }
+}
+
+// Open to-dos of the session's project: the open "- [ ]" lines under "## <project>" (a " — suffix" on the heading
+// is fine) in the to-do file
+async function readTodos($: EngineInterface, cwd: string) {
+  const p = await project($, cwd)
+  if (!p?.conf.todo_file) return []
+  const { ws, conf, rel } = p
   let text = ''
   try { text = await $.fs.read(`${ws}/${conf.todo_file}`) } catch { return [] }
   // An item: its line without the date, plus its indented detail lines
@@ -96,6 +123,7 @@ async function readTodos($: EngineInterface, cwd: string) {
 const refresh = ($: EngineInterface, cwd: string) => {
   void readStatus($, cwd).then(s => update($, status, () => s))
   void readTodos($, cwd).then(t => update($, todos, () => t))
+  void readCustom($, cwd).then(c => update($, custom, () => c))
 }
 
 export const register: Register = on => {
@@ -146,6 +174,7 @@ export const register: Register = on => {
     const q = (await read($, detail)) || (await read($, question))
     const td = await read($, todos)
     const entries = await read($, log)
+    const cu = await read($, custom)
     const qLines = q ? q.split('\n').filter(l => l.trim()) : []
     const tLines = td.flatMap(t => t.split('\n'))
     // Rows the wrapped texts take; the log gets what's left
@@ -166,11 +195,13 @@ export const register: Register = on => {
         <Text bold color="cyan">Status</Text>
         <Text wrap="wrap">{st || '—'}</Text>
         <Text> </Text>
-        <Text bold color="yellow">Log</Text>
-        {entries.length === 0 && <Text dimColor>nothing yet</Text>}
-        {entries.slice(-room).map(en => (
-          <Text wrap="truncate-end"><Text dimColor>{en.time}</Text> {en.topic || en.asked || '(continued)'}</Text>
-        ))}
+        <Text bold color="yellow">{cu.title || 'Log'}</Text>
+        {cu.title ? (cu.lines.length === 0 ? [<Text dimColor>empty</Text>]
+          : cu.lines.slice(0, room).map(l => <Text wrap="truncate-end">• {l}</Text>))
+          : entries.length === 0 ? [<Text dimColor>nothing yet</Text>]
+          : entries.slice(-room).map(en => (
+            <Text wrap="truncate-end"><Text dimColor>{en.time}</Text> {en.topic || en.asked || '(continued)'}</Text>
+          ))}
       </Box>
     )
   })
