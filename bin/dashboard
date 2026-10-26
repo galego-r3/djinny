@@ -4,7 +4,7 @@
 
 Tabs (Tab key or click): Active (projects with a running session here or on another machine, or a saved
 question), one per category (the first folder of the project's path; projects directly in the workspace and the
-root go under "other"; archived projects, Status: archived …, at the end, dimmed), Agenda (today's focus from
+root go under "other"; cockpit.json "hidden_tabs" leaves tabs out; archived projects, Status: archived …, at the end, dimmed), Agenda (today's focus from
 cockpit.json "agenda_file", set with `todo agenda`; only with that setting), To-dos (the to-do file from cockpit.json "todo_file" plus chores due within 7 days; click ☐ to tick an item)
 and Commands (the cockpit's commands with the usage lines from their headers, plus cockpit.json "commands":
 {"command": "what it does"}). Scroll with the wheel or ↑/↓/PgUp/PgDn when a tab doesn't fit.
@@ -109,8 +109,10 @@ OTHER = "other"                 # category of projects directly in the workspace
 def category(rel): return rel.split("/", 1)[0] if "/" in rel else OTHER
 
 def views(all_rows):
-    """Active, one tab per category (A–Z, "other" last), Agenda (with "agenda_file"), To-dos, Commands."""
-    cats = sorted({category(r) for r, _ in all_rows}, key=lambda c: (c == OTHER, c))
+    """Active, one tab per category (A–Z, "other" last), Agenda (with "agenda_file"), To-dos, Commands;
+    without the tabs listed in cockpit.json "hidden_tabs"."""
+    cats = sorted({category(r) for r, _ in all_rows} - set(CONF.get("hidden_tabs", [])),
+                  key=lambda c: (c == OTHER, c))
     return ["Active", *cats, *(["Agenda"] if CONF.get("agenda_file") else []), "To-dos", "Commands"]
 
 VIEWS = ["Active", "To-dos", "Commands"]   # refreshed every frame
@@ -457,7 +459,7 @@ def header(limits, n_active, n_todo, n_agenda=None):
             for dy in (0, 1, 2): TABS.append((2 + len(lines) + dy, c0, c0 + len(label) - 1, name))
         lines += [top, mid, bottom(row, cur if i == len(rows_) - 1 else None)]
     rule = lines.pop()
-    return [head + RST, *lines, rule]
+    return [head + RST, *lines, rule, ""]              # an empty line of margin under the tab bar
 
 def todo_frame(head, W, H, colors):
     """The To-dos tab: pinned lines, agent questions, chores due soon, open items per section."""
