@@ -59,7 +59,7 @@ case "$1" in
     done ;;
   fetch)
     exec 9>"$cache/presence-fetch.lock"; flock -n 9 || exit 0
-    timeout 30 git -C "$ws" fetch -q --prune origin "+refs/heads/cockpit-presence/*:$refs/*" 2>/dev/null ;;
+    timeout 30 git -C "$ws" fetch -q --prune --no-write-fetch-head origin "+refs/heads/cockpit-presence/*:$refs/*" 2>/dev/null ;;
   show)
     git -C "$ws" for-each-ref --format='%(refname)' "$refs/" | while read -r ref; do
       [ "${ref##*/}" = "$host" ] && continue
