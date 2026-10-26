@@ -19,6 +19,9 @@ claude() {
   fi
   return $rc
 }
+# Links and file paths clickable (Ctrl+click), incl. OSC 8 links: also set per tab, since a running Konsole
+# doesn't reload the cockpit profiles (lib/konsole-color) that carry the same settings.
+[[ $- == *i* && -t 1 && -n $KONSOLE_VERSION ]] && printf '\e]50;AllowEscapedLinks=true;UnderlineFilesEnabled=true;UnderlineLinksEnabled=true\a'
 # A tab opened by the dashboard starts claude: the dashboard writes this folder into the marker
 # just before opening the tab (Konsole's D-Bus can't run commands in a tab); a second line names a
 # session to resume (one that was waiting with a question when its process ended).
