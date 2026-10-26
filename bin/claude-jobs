@@ -5,7 +5,9 @@ timer claude-jobs.timer; symlinked to ~/.local/bin/claude-jobs by install.sh.
 A job is any executable file `<workspace>/<project>/jobs/<name>` with a line `# every: <n>m|h|d` in its
 first 20 lines (e.g. `# every: 5h`). It runs with the project folder as working directory and a
 30 min timeout. A job is due `every` after its last successful run; after a failure it is retried
-after 15 min. Output goes to ~/.local/state/claude-jobs/logs/<project>__<name>.log.
+with a backoff: 15 min, then 1 h, then at its normal interval (never later than that). After 3 failures in a
+row the dashboard shows an alert (`fails` in state.json). Output goes to
+~/.local/state/claude-jobs/logs/<project>__<name>.log.
 
 Several machines: with `job_host` (a hostname) in cockpit.json, jobs run only on that machine, except jobs
 with a line `# machines: all` (per-machine work like pulling and pushing the workspace). The job host
@@ -32,7 +34,8 @@ ROOT = workspace()
 STATE = Path.home() / ".local/state/claude-jobs"
 LOGS = STATE / "logs"
 TIMEOUT = 30 * 60
-RETRY = 15 * 60
+RETRY = [15 * 60, 3600]   # backoff after the 1st and 2nd failure in a row; then `every`
+ALERT = 3                # failures in a row that the dashboard shows
 MAX_LOG = 256 * 1024     # keep logs small: trim to the last half when bigger
 SKIP_DIRS = {".git", ".venv", "node_modules"}
 UNITS = {"m": 60, "h": 3600, "d": 86400}
@@ -106,7 +109,8 @@ def due_at(job_id, every, state):
     s = state.get(job_id, {})
     if not s: return 0
     if s.get("ok"): return s["last"] + every
-    return s["last"] + min(RETRY, every)
+    fails = s.get("fails", 1)
+    return s["last"] + min(RETRY[fails - 1] if fails <= len(RETRY) else every, every)
 
 def run(job_id, path, state):
     log = LOGS / (job_id.replace("/", "__") + ".log")
@@ -124,7 +128,8 @@ def run(job_id, path, state):
     if log.stat().st_size > MAX_LOG:
         data = log.read_bytes()[-MAX_LOG // 2:]
         log.write_bytes(data[data.find(b"\n") + 1:])
-    state[job_id] = {"last": start, "ok": rc == 0, "rc": rc}
+    fails = 0 if rc == 0 else state.get(job_id, {}).get("fails", 0) + 1
+    state[job_id] = {"last": start, "ok": rc == 0, "rc": rc, "fails": fails}
     save_state(state)
     return rc
 
@@ -140,10 +145,10 @@ def main():
         here = single_jobs_here()
         for job_id, path, every, every_machine in jobs:
             s = state.get(job_id, {})
-            res = "never run" if not s else ("ok" if s.get("ok") else f"FAILED ({s.get('rc')})")
+            res = "never run" if not s else ("ok" if s.get("ok") else f"FAILED ({s.get('rc')}) ×{s.get('fails', 1)}")
             nxt = (fmt(due_at(job_id, every, state)) if s else "now") if every_machine or here else f"on {JOB_HOST}"
             print(f"{job_id:40} every {every // 3600}h{every % 3600 // 60:02d}m  last {fmt(s.get('last'))}  "
-                  f"{res:12}  next {nxt}")
+                  f"{res:16}  next {nxt}")
         return
     lock = open(STATE / "lock", "w")
     try:

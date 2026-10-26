@@ -60,6 +60,7 @@
 </header>
 <nav id="tabs"></nav>
 <div class="err" id="err" hidden></div>
+<div class="err" id="alerts" hidden></div>
 <main id="main"></main>
 <script>
 const $ = id => document.getElementById(id)
@@ -161,6 +162,8 @@ function render() {
   $('clock').textContent = new Date(data.time * 1000).toLocaleString('sv-SE').slice(0, 16)
   $('limits').innerHTML = Object.entries(data.limits).map(([k, v]) =>
     `<span>${k} <b>${v.percent ?? '?'}%</b> ↻ ${time(v.resets)}</span>`).join(' &nbsp; ')
+  $('alerts').hidden = !data.alerts?.length
+  $('alerts').textContent = (data.alerts || []).map(a => '⚠ ' + a).join(' · ')
   tabs()
   $('main').innerHTML = view === 'To-dos' ? todoView() : view === 'Agenda' ? agendaView() : rowsView()
 }

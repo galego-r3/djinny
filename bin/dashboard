@@ -620,8 +620,15 @@ def snapshot():
             todo["sections"][-1]["items"].append({"index": i, "text": text, "plain": todos.plain(text)})
     data = {"name": NAME, "time": int(now), "states": STATES, "levels": LEVELS, "level_colors": LCOL,
             "limits": {k: {"percent": v[0], "resets": v[1]} for k, v in limits.items()},
-            "views": views(all_rows), "rows": rows, "todos": todo, "agenda": agenda_data()}
+            "views": views(all_rows), "rows": rows, "todos": todo, "agenda": agenda_data(), "alerts": job_alerts()}
     return data, qfiles
+
+def job_alerts():
+    """Jobs that failed 3 times in a row or more (claude-jobs' state.json), as lines for an alert."""
+    try: state = json.loads((HOME / ".local/state/claude-jobs/state.json").read_text())
+    except (OSError, ValueError): return []
+    return [f"job {j} failed {s['fails']}× in a row (claude-jobs list)" for j, s in sorted(state.items())
+            if not s.get("ok") and s.get("fails", 0) >= 3]
 
 def agenda_data():
     path = todos.agenda_file(ROOT, CONF)
@@ -666,6 +673,7 @@ def frame():
     statw = max(12, min(max((len(s) for _, s in rows), default=12), W - fixed - 1 - actcol))
 
     out = header(limits, len(active), n_todo, n_agenda)
+    out += [f"   {BOLD}{esc(STATES['question'])}⚠ {a}{RST}" for a in job_alerts()]
     pad = " " * (3 + namew + 2 + STATEW + statw + 2 + actcol)
     out.append(pad + " ".join(f"{BOLD}{esc(c)}{t:>{NUMW}}{RST}" for t, c in zip(("5h", "7d", "all"), HCOL)))
 
