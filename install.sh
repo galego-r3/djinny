@@ -76,7 +76,7 @@ desktop() {   # file name, Name, Comment, Exec; Icon as a full path (the taskbar
     "$2" "$3" "$4" "${icon:-$1}" "$1" > ~/.local/share/applications/"$1".desktop
 }
 label=$(jq -r '.name // empty' "$ws/cockpit.json" 2>/dev/null); label=${label:-Claude}   # launcher names: the workspace's name
-desktop claude-cockpit "$label" "Claude Code sessions of the workspace (reopens the ones open before)" "$HOME/.local/bin/cockpit"
+desktop claude-cockpit "$label" "Claude Code sessions of the workspace (opens the root session)" "$HOME/.local/bin/cockpit"
 desktop claude-dashboard "$label dashboard" "Live view of every project" "$HOME/.local/bin/dashboard --window"
 command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true
 # cockpit.json "pin_launchers": true pins both to the first two slots of every Plasma task manager (each run)

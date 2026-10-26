@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Start the cockpit: a new Konsole window with a tab for every workspace session that was open before
-# (resumed with claude --resume; recorded by hooks/session-state.sh in ~/.cache/claude/open/), and the
+# Start the cockpit: a new Konsole window with the root session (its last conversation resumed with
+# claude --resume, if it was open before; recorded by hooks/session-state.sh in ~/.cache/claude/open/), and the
 # dashboard: with "dashboard": "web" in cockpit.json in the browser, with "window" in a window of its own
 # (dashboard --window), else as a tab (session-name.sh). The window has its own taskbar icon (desktop file
-# claude-cockpit, installed by install.sh). Sessions still running are skipped; with none to reopen, the root
-# session starts.
+# claude-cockpit, installed by install.sh). Project sessions are never reopened here: they start from the
+# dashboard or via the root session. If the root session is running, its window comes to the front.
 #   cockpit          start it
 #   cockpit list     show what it would reopen
 set -euo pipefail
@@ -32,15 +32,22 @@ launched="$HOME/.cache/claude/cockpit-launched"
 [ -f "$launched" ] && [ $(( $(date +%s) - $(stat -c %Y "$launched") )) -lt 60 ] && running+="$(tr '\n' ' ' < "$launched")"
 
 tabs=()
-for f in "$odir"/*; do
+for f in $(ls -t "$odir" 2>/dev/null | sed "s|^|$odir/|"); do
   [ -f "$f" ] || continue
   sid=$(basename "$f"); dir=$(sed -n 1p "$f"); tp=$(sed -n 2p "$f")
+  [ "$dir" = "$ws" ] || continue   # only the root session
   [[ $running == *" $sid "* ]] && continue
   if [ ! -d "$dir" ] || [ ! -f "$tp" ]; then rm -f "$f"; continue; fi   # folder or conversation gone
   grep -qm1 '^Status: archived' "$dir/CLAUDE.md" 2>/dev/null && { rm -f "$f"; continue; }   # archived project
-  tabs+=("$(ws_rel "$dir")|$dir|$sid")
+  tabs=("$(ws_rel "$dir")|$dir|$sid"); break   # the newest one
 done
-[ ${#tabs[@]} -gt 0 ] || [[ $running == *[a-z0-9]* ]] || tabs=("$ws_name|$ws|")
+root_running=
+for f in "$odir"/*; do
+  [ -f "$f" ] && [ "$(sed -n 1p "$f")" = "$ws" ] && [[ $running == *" $(basename "$f") "* ]] && root_running=1
+done
+[[ $running == *" root "* ]] && root_running=1
+[ -n "$root_running" ] && tabs=()
+[ ${#tabs[@]} -gt 0 ] || [ -n "$root_running" ] || tabs=("$ws_name|$ws|")
 
 if [ "${1:-}" = list ]; then
   for t in "${tabs[@]}"; do IFS='|' read -r n d s <<<"$t"; echo "$n  ${s:-(new session)}"; done
