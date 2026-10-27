@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook: keep the cockpit current. On every prompt (at most once a minute) pull the cockpit
-# repo in the background, fast-forward only, never over local changes; re-run install.sh when the pull
+# repo in the background, fast-forward only, never over local changes (a history rewritten upstream is
+# taken over, the old one kept in a branch pre-rewrite-<date>); re-run install.sh when the pull
 # touched install.sh, systemd/ or plugins/, else restart cockpit-web when its code changed. What a pull brought in is reported on the next prompt.
 # Log: ~/.cache/claude/cockpit-pull.log
 here=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
@@ -23,7 +24,16 @@ setsid bash -c '
   cd "$here" || exit 0
   [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "$(date -Is) skipped: local changes"; exit 0; }
   old=$(git rev-parse HEAD)
-  GIT_TERMINAL_PROMPT=0 timeout 30 git pull -q --ff-only || { echo "$(date -Is) pull failed"; exit 0; }
+  if ! GIT_TERMINAL_PROMPT=0 timeout 30 git pull -q --ff-only; then
+    # History rewritten upstream (no common commit): keep the old one in a branch, take the new one
+    up=$(git rev-parse --abbrev-ref "@{u}" 2>/dev/null) && git rev-parse -q --verify "$up" >/dev/null \
+      && ! git merge-base HEAD "$up" >/dev/null || { echo "$(date -Is) pull failed"; exit 0; }
+    git branch -f "pre-rewrite-$(date +%F)" HEAD && git reset -q --hard "$up" \
+      && echo "$(date -Is) history rewritten upstream: old one kept in pre-rewrite-$(date +%F)"
+    ./install.sh >/dev/null 2>&1
+    echo "Cockpit updated: its history was rewritten upstream; the old one is kept in branch pre-rewrite-$(date +%F)" > "$news"
+    exit 0
+  fi
   new=$(git rev-parse HEAD)
   [ "$old" = "$new" ] && exit 0
   echo "$(date -Is) $old -> $new"

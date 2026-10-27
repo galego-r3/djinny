@@ -111,7 +111,7 @@ cols=$(term_cols); cols=${cols:-${COLUMNS:-0}}
 MARGIN=4  # Claude Code indents the status line; keep clear of the right edge
 plain=$(sed $'s/\e\[[0-9;]*m//g' <<<"$out")
 
-# Folder name as in the session/tab name: path relative to the workspace, e.g. "family/schule"
+# Folder name as in the session/tab name: path relative to the workspace, e.g. "family/school"
 # (the root itself is the workspace's name), otherwise the current directory's own name.
 cwd=$(j '.workspace.current_dir'); cwd=${cwd:-$(j '.cwd')}; cwd=${cwd:-$PWD}
 dir=$(ws_rel "$cwd"); dir=${dir:-$(basename "$cwd")}

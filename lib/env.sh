@@ -9,7 +9,7 @@ conf="$ws/cockpit.json"
 ws_name=$(jq -r '.name // empty' "$conf" 2>/dev/null); ws_name=${ws_name:-$(basename "$ws")}
 
 # Session name of a directory: its path relative to the workspace, cut to cockpit.json "depth" levels
-# (default 2, as the dashboard rows: code/wba/wba-31 -> "code/wba"), $ws_name for the root itself, empty
+# (default 2, as the dashboard rows: code/shop/shop-31 -> "code/shop"), $ws_name for the root itself, empty
 # outside the workspace
 ws_rel() {
   local rel depth

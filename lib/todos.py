@@ -17,7 +17,7 @@ def todo_file(root, conf):
     return root / f if f else None
 
 def section_project(name):
-    """Heading text -> the project path it belongs to ("family/schule — Nela" -> "family/schule")."""
+    """Heading text -> the project path it belongs to ("family/school — Anna" -> "family/school")."""
     return name.split(" — ")[0].strip()
 
 def parse(text):

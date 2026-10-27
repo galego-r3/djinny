@@ -13,7 +13,7 @@ current 5h window, the current
 7d window and all time.
 - Project = folder with a CLAUDE.md and no project below it (parent folders don't count); the root's row
   has the workspace's name. Rows go at most cockpit.json "depth" (default 2) levels deep: a project deeper
-  down (e.g. a worktree in code/wba/wba-31) is counted toward its ancestor at that depth (code/wba). Folders in
+  down (e.g. a worktree in code/shop/shop-31) is counted toward its ancestor at that depth (code/shop). Folders in
   cockpit.json "hidden" are skipped.
 - Live state = busy / question / monitoring, written by hooks/session-state.sh. A project with no session here
   but one on another machine shows "@<host>" in that session's state colour (dim when idle; lib/presence).
@@ -94,8 +94,8 @@ def load_rows():
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
                              and os.path.normpath(os.path.join(rel, d)) not in HIDDEN)
         if "CLAUDE.md" in filenames and Path(dirpath) != ROOT:
-            # Rows go at most DEPTH levels deep: a deeper project (e.g. a worktree in code/wba/wba-31) is
-            # shown as its ancestor at that depth (code/wba), which collects its state and tokens
+            # Rows go at most DEPTH levels deep: a deeper project (e.g. a worktree in code/shop/shop-31) is
+            # shown as its ancestor at that depth (code/shop), which collects its state and tokens
             parts = Path(dirpath).relative_to(ROOT).parts
             found.append("/".join(parts[:DEPTH]))
             FOLDERS[parts[-1]] = "/".join(parts[:DEPTH])

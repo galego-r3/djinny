@@ -10,9 +10,10 @@
 # - adds the launchers claude-cockpit and claude-dashboard (desktop files + icons); with cockpit.json
 #   "pin_launchers": true pins them to the first two taskbar slots
 # - remembers the workspace in ~/.config/claude-cockpit/workspace
-# - rules: if <workspace>/rules/ (or cockpit.json "rules": "<folder>") is missing, asks whether to use the shared ruleset (clone of $CLAUDE_RULES_REPO)
-#   or start your own (its cockpit.md plus an empty RULES.md, new git repo); answer ahead with
-#   CLAUDE_RULES=shared|own. Makes sure the workspace's CLAUDE.md loads @<that folder>/RULES.md.
+# - rules: if <workspace>/rules/ (or cockpit.json "rules": "<folder>") is missing, starts your own from
+#   rules/cockpit.md (plus an empty RULES.md, new git repo); with $CLAUDE_RULES_REPO set it asks whether to
+#   clone that ruleset instead (answer ahead with CLAUDE_RULES=shared|own). Makes sure the workspace's
+#   CLAUDE.md loads @<that folder>/RULES.md.
 set -euo pipefail
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 ws=$(cd "${1:-$here/..}" && pwd)
@@ -31,24 +32,21 @@ echo "$ws" > ~/.config/claude-cockpit/workspace
 [ -f "$ws/cockpit.json" ] || cp "$here/cockpit.example.json" "$ws/cockpit.json"
 
 rd=$(jq -r '.rules // "rules"' "$ws/cockpit.json" 2>/dev/null); rd=${rd:-rules}   # the rules folder, relative to the workspace
-rules_repo=${CLAUDE_RULES_REPO:-git@github.com:stemiwe/claude-rules.git}
+rules_repo=${CLAUDE_RULES_REPO:-}
 if [ ! -f "$ws/$rd/RULES.md" ]; then
-  choice=${CLAUDE_RULES:-}
-  if [ -z "$choice" ] && [ -t 0 ]; then
+  choice=${CLAUDE_RULES:-own}
+  if [ -n "$rules_repo" ] && [ -z "${CLAUDE_RULES:-}" ] && [ -t 0 ]; then
     echo "Rules for the sessions (<workspace>/$rd/):"
     echo "  1) use the shared ruleset ($rules_repo)"
-    echo "  2) create your own (starts from its cockpit conventions)"
+    echo "  2) create your own (starts from the cockpit conventions)"
     read -rp "Choice [1/2]: " choice
   fi
   case "$choice" in
     1|shared) git clone -q "$rules_repo" "$ws/$rd" && echo "cloned the rules into $ws/$rd" ;;
-    2|own)
-      src=$(mktemp -d)
-      git clone -q --depth 1 "$rules_repo" "$src"
-      mkdir -p "$ws/$rd"; cp "$src/cockpit.md" "$ws/$rd/"; rm -rf "$src"
+    *)
+      mkdir -p "$ws/$rd"; cp "$here/rules/cockpit.md" "$ws/$rd/"
       printf '# Rules\n\nRules for every Claude session in this workspace.\n\n@cockpit.md\n' > "$ws/$rd/RULES.md"
       git -C "$ws/$rd" init -q -b main && echo "created your own rules in $ws/$rd (push them to a repo of yours)" ;;
-    *) echo "warning: no rules installed; re-run with CLAUDE_RULES=shared or own" >&2 ;;
   esac
 fi
 if [ -f "$ws/$rd/RULES.md" ] && ! grep -qxF "@$rd/RULES.md" "$ws/CLAUDE.md" 2>/dev/null; then
