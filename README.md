@@ -11,6 +11,8 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 - **Agenda tab**: with `"agenda_file"` in `cockpit.json` (e.g. `todos/AGENDA.md`), a tab before To-dos shows
   the day's focus, set each morning with `todo agenda <a>, <b>, …` (one `## YYYY-MM-DD` section per day, newest
   first); its items tick like to-dos. Until today's is set, the tab says so and shows the last one dimmed.
+- **Jobs tab**: between To-dos and Commands, every regular job (`claude-jobs list --json`) with interval, last
+  run, result and next run; failing ones first.
 - **Web dashboard** (`cockpit-web`): the same as a page in the browser, served on `127.0.0.1:8765` by the
   user service `cockpit-web.service` (always on). Click a project to go to its Konsole tab (or open one),
   dismiss questions, tick to-dos; Tab/Shift+Tab switch tabs. With `"dashboard": "web"` in `cockpit.json`,

@@ -17,6 +17,7 @@ Without `job_host`, every job runs on every machine.
 
   claude-jobs                 run all due jobs (what the timer does)
   claude-jobs list            show every job with interval, last run, result and next due time
+  claude-jobs list --json     the same as JSON (for the dashboard's Jobs tab)
   claude-jobs run <project>/<name>   run one job now
 """
 import fcntl, json, os, re, subprocess, sys, time
@@ -143,6 +144,14 @@ def main():
     jobs = list(find_jobs())
     if args[:1] == ["list"]:
         here = single_jobs_here()
+        if args[1:2] == ["--json"]:
+            print(json.dumps([{"id": job_id, "project": job_id.rsplit("/", 1)[0], "every": every,
+                               "last": state.get(job_id, {}).get("last"), "ok": state.get(job_id, {}).get("ok"),
+                               "rc": state.get(job_id, {}).get("rc"), "fails": state.get(job_id, {}).get("fails", 0),
+                               "next": due_at(job_id, every, state) if every_machine or here else None,
+                               "host": None if every_machine or here else JOB_HOST}
+                              for job_id, path, every, every_machine in jobs]))
+            return
         for job_id, path, every, every_machine in jobs:
             s = state.get(job_id, {})
             res = "never run" if not s else ("ok" if s.get("ok") else f"FAILED ({s.get('rc')}) ×{s.get('fails', 1)}")

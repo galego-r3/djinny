@@ -155,6 +155,20 @@ function agendaView() {
   return h
 }
 
+function jobsView() {
+  const every = s => s % 86400 === 0 ? s / 86400 + 'd' : s % 3600 === 0 ? s / 3600 + 'h' : s / 60 + 'm'
+  const jobs = [...(data.jobs || [])].sort((a, b) => (a.ok !== false) - (b.ok !== false) || a.id.localeCompare(b.id))
+  if (!jobs.length) return `<div class="empty">no jobs</div>`
+  return `<table>
+    <thead><tr><th class="l">job</th><th>every</th><th class="l">last run</th><th class="l">result</th><th class="l">next run</th></tr></thead>
+    <tbody>${jobs.map(j => `<tr class="row" style="--c:${j.color || 'var(--line)'}">
+      <td>${esc(j.id)}</td><td class="num">${every(j.every)}</td><td>${j.last ? time(j.last) : '—'}</td>
+      <td>${j.last == null ? '<span class="action">never run</span>' : j.ok ? 'ok'
+        : `<span style="color:var(--question)">failed ×${j.fails} (${esc(j.rc)})</span>`}</td>
+      <td>${j.host ? 'on ' + esc(j.host) : j.next > Date.now() / 1000 ? time(j.next) : 'now'}</td></tr>`).join('')}</tbody>
+  </table>`
+}
+
 function render() {
   if (!data) return
   document.title = `${data.name} · cockpit`
@@ -165,7 +179,7 @@ function render() {
   $('alerts').hidden = !data.alerts?.length
   $('alerts').textContent = (data.alerts || []).map(a => '⚠ ' + a).join(' · ')
   tabs()
-  $('main').innerHTML = view === 'To-dos' ? todoView() : view === 'Agenda' ? agendaView() : rowsView()
+  $('main').innerHTML = view === 'To-dos' ? todoView() : view === 'Agenda' ? agendaView() : view === 'Jobs' ? jobsView() : rowsView()
 }
 
 document.addEventListener('click', e => {

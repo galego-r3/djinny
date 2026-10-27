@@ -4,7 +4,7 @@
 
 Tabs (Tab key or click): Active (projects with a running session here or on another machine, or a saved
 question), one per category (the first folder of the project's path; projects directly in the workspace and the
-root go under "other"; cockpit.json "hidden_tabs" leaves tabs out; archived projects, Status: archived …, at the end, dimmed), Agenda (today's focus from
+root go under "other"; cockpit.json "hidden_tabs" leaves tabs out; archived projects, Status: archived …, at the end, dimmed), Jobs (the regular jobs of claude-jobs: interval, last run, result, next run), Agenda (today's focus from
 cockpit.json "agenda_file", set with `todo agenda`; only with that setting), To-dos (the to-do file from cockpit.json "todo_file" plus chores due within 7 days; click ☐ to tick an item)
 and Commands (the cockpit's commands with the usage lines from their headers, plus cockpit.json "commands":
 {"command": "what it does"}). Scroll with the wheel or ↑/↓/PgUp/PgDn when a tab doesn't fit.
@@ -113,7 +113,7 @@ def views(all_rows):
     without the tabs listed in cockpit.json "hidden_tabs"."""
     cats = sorted({category(r) for r, _ in all_rows} - set(CONF.get("hidden_tabs", [])),
                   key=lambda c: (c == OTHER, c))
-    return ["Active", *cats, *(["Agenda"] if CONF.get("agenda_file") else []), "To-dos", "Commands"]
+    return ["Active", *cats, *(["Agenda"] if CONF.get("agenda_file") else []), "To-dos", "Jobs", "Commands"]
 
 VIEWS = ["Active", "To-dos", "Commands"]   # refreshed every frame
 CATCOL = {}                     # category tab -> its colour: its own entry in "colors", else its projects' middle shade
@@ -539,6 +539,44 @@ def usage_lines(path):
         elif out and not line.strip(): break
     return out
 
+JOBS = [0, []]                  # (time fetched, `claude-jobs list --json`), refreshed every 30 s
+
+def jobs_data():
+    """The regular jobs (bin/claude-jobs), fetched at most every 30 s."""
+    if time.time() - JOBS[0] > 30:
+        try:
+            out = subprocess.run([Path(__file__).resolve().parent / "claude-jobs", "list", "--json"],
+                                 capture_output=True, text=True, timeout=20).stdout
+            JOBS[:] = [time.time(), json.loads(out)]
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            JOBS[0] = time.time()
+    return JOBS[1]
+
+def every_str(s):
+    return f"{s // 86400}d" if s % 86400 == 0 else f"{s // 3600}h" if s % 3600 == 0 else f"{s // 60}m"
+
+def jobs_frame(head, W, H, colors):
+    """The Jobs tab: every regular job with interval, last run, result and next run; failing ones first."""
+    jobs = sorted(jobs_data(), key=lambda j: (j["ok"] is not False, j["id"]))
+    when = lambda ts: time.strftime("%a %d %H:%M", time.localtime(ts)) if ts else "—"
+    idw = max((len(j["id"]) for j in jobs), default=4)
+    body = [f"   {BOLD}{'job':<{idw}}  {'every':>5}  {'last run':<12}  {'result':<14}  next run{RST}"]
+    for j in jobs:
+        col = color_of(NAME if j["project"] == ROOT.name else j["project"], colors)
+        sw = f"{esc(col, bg=True)}  {RST}" if col else f"{DIM}░░{RST}"
+        if j["last"] is None: res = f"{DIM}{'never run':<14}{RST}"
+        elif j["ok"]: res = f"{'ok':<14}"
+        else: res = f"{BOLD}{esc(STATES['question'])}{'failed ×%s (%s)' % (j['fails'], j['rc']):<14}{RST}"
+        nxt = f"on {j['host']}" if j["host"] else when(j["next"]) if j["next"] and j["next"] > time.time() else "now"
+        body.append(f" {sw} {j['id']:<{idw}}  {every_str(j['every']):>5}  {when(j['last']):<12}  {res}  {nxt}")
+    if not jobs: body.append(f"   {DIM}no jobs (rules C4: <project>/jobs/<name> with a line # every: 5h){RST}")
+    body += ["", f"{DIM}Logs: ~/.local/state/claude-jobs/logs/ · run one now: claude-jobs run <job>{RST}"]
+    room = max(1, H - len(head) - 2)
+    SCROLL[0] = max(0, min(SCROLL[0], len(body) - room))
+    shown = body[SCROLL[0]:SCROLL[0] + room]
+    more = f"lines {SCROLL[0] + 1}–{SCROLL[0] + len(shown)} of {len(body)}, ↑/↓/wheel scroll · " if len(body) > room else ""
+    return head + [""] + shown + [f"{DIM}{more}q to quit · Tab/Shift+Tab switch tabs{RST}"]
+
 def commands_frame(head, W, H):
     """The Commands tab: the cockpit's own commands (bin/) and the workspace's from cockpit.json "commands"."""
     body = [f"{BOLD}{esc('#7EC8F7')}▌ Cockpit{RST}"]
@@ -620,7 +658,9 @@ def snapshot():
             todo["sections"][-1]["items"].append({"index": i, "text": text, "plain": todos.plain(text)})
     data = {"name": NAME, "time": int(now), "states": STATES, "levels": LEVELS, "level_colors": LCOL,
             "limits": {k: {"percent": v[0], "resets": v[1]} for k, v in limits.items()},
-            "views": views(all_rows), "rows": rows, "todos": todo, "agenda": agenda_data(), "alerts": job_alerts()}
+            "views": views(all_rows), "rows": rows, "todos": todo, "agenda": agenda_data(), "alerts": job_alerts(),
+            "jobs": [{**j, "color": color_of(NAME if j["project"] == ROOT.name else j["project"], colors)}
+                     for j in jobs_data()]}
     return data, qfiles
 
 def job_alerts():
@@ -651,10 +691,11 @@ def frame():
     live, qfiles = live_states(row_paths)
     remote = remote_states(row_paths)
     active = [(r, st) for r, st in all_rows if r in RUNNING or r in live or r in remote]
-    if VIEW[0] in ("Agenda", "To-dos", "Commands"):
+    if VIEW[0] in ("Agenda", "To-dos", "Jobs", "Commands"):
         W, H = shutil.get_terminal_size((120, 40))
         head = header(limits, len(active), n_todo, n_agenda)
         if VIEW[0] == "Commands": return commands_frame(head, W, H)
+        if VIEW[0] == "Jobs": return jobs_frame(head, W, H, colors)
         if VIEW[0] == "Agenda": return agenda_frame(head, W, H)
         return todo_frame(head, W, H, colors)
     rows = active if VIEW[0] == "Active" else sorted(
