@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Deploys the starter structure (starter/) into the workspace: an empty shell, no data, only the general
+# instructions for the sessions. Never overwrites a file; a root CLAUDE.md that holds nothing but @-imports
+# (as install.sh writes it) is replaced by the starter's.
+#   cockpit-starter [--dry-run]
+# Creates: CLAUDE.md, <rules>/workflow.md (+ "@workflow.md" in <rules>/RULES.md), todos/, ideas/, jobs/git-sync,
+# projects/, tmp/, .gitignore, git repo (no remote); in cockpit.json: todo_file, todo_default, agenda_file.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/../lib/env.sh"
+src="$(dirname "$(readlink -f "$0")")/../starter"
+dry=; [ "${1:-}" = --dry-run ] && dry=1
+rd=$(jq -r '.rules // "rules"' "$conf" 2>/dev/null); rd=${rd:-rules}
+say() { echo "${dry:+would }$*"; }
+
+put() {   # $1 = file in starter/, $2 = target relative to the workspace
+  local t="$ws/$2"
+  if [ -e "$t" ]; then echo "kept: $2 (exists)"; return; fi
+  say "create: $2"
+  [ -n "$dry" ] && return
+  mkdir -p "$(dirname "$t")"
+  sed "s#RULES_DIR#$rd#g" "$src/$1" > "$t"
+  [ -x "$src/$1" ] && chmod +x "$t"
+  return 0
+}
+
+# root CLAUDE.md: replace one that has only @-imports and blank lines
+if [ -f "$ws/CLAUDE.md" ] && ! grep -qvE '^(@.*|\s*)$' "$ws/CLAUDE.md"; then
+  say "replace: CLAUDE.md (had only imports)"
+  [ -n "$dry" ] || sed "s#RULES_DIR#$rd#g" "$src/CLAUDE.md" > "$ws/CLAUDE.md"
+else
+  put CLAUDE.md CLAUDE.md
+fi
+put rules/workflow.md "$rd/workflow.md"
+if [ -f "$ws/$rd/RULES.md" ] && ! grep -qxF '@workflow.md' "$ws/$rd/RULES.md"; then
+  say "add: @workflow.md to $rd/RULES.md"
+  [ -n "$dry" ] || printf '@workflow.md\n' >> "$ws/$rd/RULES.md"
+fi
+for f in todos/CLAUDE.md todos/TODO.md todos/AGENDA.md ideas/CLAUDE.md ideas/IDEAS.md jobs/git-sync; do put "$f" "$f"; done
+put gitignore .gitignore
+for d in projects tmp; do [ -d "$ws/$d" ] || { say "create: $d/"; [ -n "$dry" ] || mkdir -p "$ws/$d"; }; done
+
+# cockpit.json: the to-do list and agenda for the dashboard and the todo command (only if unset)
+if [ "$(jq -r '.todo_file // empty' "$conf" 2>/dev/null)" = "" ]; then
+  say "set: todo_file, todo_default, agenda_file in cockpit.json"
+  if [ -z "$dry" ]; then
+    tmp=$(mktemp "$conf.XXXXXX")
+    jq --indent 2 '.todo_file = "todos/TODO.md" | .todo_default //= "todos" | .agenda_file //= "todos/AGENDA.md"' "$conf" > "$tmp" && mv "$tmp" "$conf"
+  fi
+fi
+if [ ! -d "$ws/.git" ]; then
+  say "create: git repo (no remote; add one to have jobs/git-sync push it)"
+  [ -n "$dry" ] || git -C "$ws" init -q -b main
+fi
+[ -n "$dry" ] || { mkdir -p "$ws/.cockpit"; touch "$ws/.cockpit/welcomed"; echo "starter deployed in $ws"; }

@@ -46,4 +46,18 @@ if [ -n "$KONSOLE_DBUS_SERVICE" ] && [ -n "$KONSOLE_DBUS_SESSION" ]; then
   setsid "$(dirname "$(readlink -f "$0")")/sort-tabs.sh" </dev/null >/dev/null 2>&1 &
 fi
 
+# First start of the root session in a workspace with nothing but the cockpit (no project CLAUDE.md, never
+# greeted): a welcome for the user, and welcome.md (how-to, offer to deploy starter/) as context for Claude
+rd=$(jq -r '.rules // "rules"' "$conf" 2>/dev/null); rd=${rd:-rules}
+if [ "$name" = "$ws_name" ] && [ ! -e "$ws/.cockpit/welcomed" ] \
+   && [ -z "$(find "$ws" -mindepth 2 -maxdepth 3 -name CLAUDE.md -not -path "$ws/cockpit/*" -not -path "$ws/$rd/*" \
+                -not -path "$ws/tmp/*" -print -quit 2>/dev/null)" ]; then
+  mkdir -p "$ws/.cockpit"; touch "$ws/.cockpit/welcomed"
+  here=$(dirname "$(readlink -f "$0")")/..
+  jq -nc --arg t "$name" --rawfile w "$here/welcome.md" '{
+    systemMessage: "Welcome to the Claude cockpit! Say hi to get a short tour and the option to set up the starter structure.",
+    hookSpecificOutput: {hookEventName: "SessionStart", sessionTitle: $t,
+      additionalContext: ("First start of the cockpit in this workspace. On the user'"'"'s first message, greet them and do this:\n\n" + $w)}}'
+  exit 0
+fi
 jq -nc --arg t "$name" '{hookSpecificOutput:{hookEventName:"SessionStart",sessionTitle:$t}}'

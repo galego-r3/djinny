@@ -54,6 +54,13 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
   minute behind.
 - **Updates**: every prompt pulls the cockpit in the background, so a change pushed from another machine
   arrives without doing anything; the next prompt says what came in.
+- **Welcome and starter**: the root session's first start in a workspace with nothing but the cockpit shows
+  a welcome; on the first message Claude explains the structure (`welcome.md`) and offers to deploy the
+  starter: `cockpit-starter` (`--dry-run` lists what it would do) copies `starter/` into the workspace, an
+  empty shell with no data, only the general instructions: root `CLAUDE.md` (operator tasks, folder map),
+  `rules/workflow.md` (W1–W8: short replies, central to-dos and ideas, git, …), `todos/`, `ideas/`,
+  `projects/`, `tmp/`, `jobs/git-sync`, `.gitignore`, a git repo and the to-do settings in `cockpit.json`.
+  It never overwrites a file. Greeted once (`.cockpit/welcomed`).
 - **Rules**: live in your workspace, in `<workspace>/rules/` (another folder: `"rules": "<folder>"` in
   `cockpit.json`). `install.sh` starts them from `rules/cockpit.md` (the cockpit conventions C1–C7) plus an
   empty `RULES.md` for your own; with `CLAUDE_RULES_REPO=<git url>` it offers to clone a shared ruleset
@@ -86,6 +93,7 @@ A terminal cockpit for running many Claude Code sessions side by side, one per p
 | `lib/konsole-color` | colours a Konsole tab: `setTabColor`, or on Konsole 26.08+ (no `setTabColor`) a generated profile `cockpit-RRGGBB` per colour in `~/.local/share/konsole/` (new colours show after a Konsole restart) |
 | `systemd/` | `claude-jobs.service` / `.timer` |
 | `cockpit.example.json` | template for the workspace's `cockpit.json` |
+| `bin/cockpit-starter`, `starter/`, `welcome.md` | the starter structure, its deploy script, and the how-to the root session gets on its first start (`hooks/session-name.sh`) |
 | `rules/cockpit.md` | the cockpit conventions (C1–C7), copied into a new workspace's rules by `install.sh` |
 
 ## Install
@@ -107,6 +115,7 @@ installer links as `qdbus6`), Claude Code, `jq`, Python 3, systemd (user units) 
 3. `install.sh` sets up the rules (your own from `rules/cockpit.md`, or a shared ruleset) and adds `@rules/RULES.md` to the workspace's root `CLAUDE.md`.
 4. Optional: in `cockpit.json`, set tab colours (`colors`) and folders to skip (`hidden`).
 5. Start `claude` (or `dashboard`) in a Konsole tab; the dashboard opens with it. Open projects by clicking them.
+   In a fresh workspace, the first start greets you and offers the starter structure (`cockpit-starter`).
 
 ## Workspace config: `<workspace>/cockpit.json`
 
